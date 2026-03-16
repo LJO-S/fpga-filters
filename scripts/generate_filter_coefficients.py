@@ -81,11 +81,14 @@ def __dump_taps_to_txt(a_taps: np.array, a_data_width: int, a_output_path: Path)
 
 def generate_coefficients_remez(
     a_attenuation_db: float,
+    a_gain: float,
     a_fstop: list,
     a_fpass: list,
     a_fs: float,
     a_data_width: int,
     a_output_dir: str = f"../data/filter_coefficients/",
+    a_multirate_factor: int = None,
+    a_save: bool = True,
 ):
     """
     Use SciPy's implementation of the Parks-McClellan algorithm. Works for LPF and HPF.
@@ -119,22 +122,26 @@ def generate_coefficients_remez(
         )
         nbr_of_taps = max(nbr_of_taps_1, nbr_of_taps_2)
         bands = [0, fstop_1, fpass_1, fpass_2, fstop_2, 0.5 * a_fs]
-        gain = [0, 1, 0]
+        gain = [0, a_gain, 0]
         title = "BPF"
     elif fstop_1 > fpass_1:
         # LPF
         bands = [0, fpass_1, fstop_1, 0.5 * a_fs]
-        gain = [1, 0]
+        gain = [a_gain, 0]
         title = "LPF"
     else:
         # HPF
         bands = [0, fstop_1, fpass_1, 0.5 * a_fs]
-        gain = [0, 1]
+        gain = [0, a_gain]
         title = "HPF"
 
     # Create odd number of taps
-    if nbr_of_taps % 2 == 0:
-        nbr_of_taps += 1
+    if a_multirate_factor is None:
+        if nbr_of_taps % 2 == 0:
+            nbr_of_taps += 1
+    else:
+        while nbr_of_taps % a_multirate_factor != 0:
+            nbr_of_taps += 1
 
     print(
         f"=====================\nGenerating {title} with:\nN_taps={nbr_of_taps}\nBands_hz={bands}\nG={gain}\n=====================\n"
@@ -149,17 +156,20 @@ def generate_coefficients_remez(
     )
 
     # Get coefficients
-    w, h = freqz(taps, [1], worN=2000, fs=fs)
     # TODO: Save fig instead
+    w, h = freqz(taps, [1], worN=2000, fs=a_fs)
     __plot_response(
         a_w=w, a_h=h, a_atten_db=a_attenuation_db, a_taps=taps, a_title=title
     )
     plt.show()
-    # Dump coefficients
-    output_path = Path(a_output_dir) / f"{title}_{a_data_width}b.txt"
-    __dump_taps_to_txt(
-        a_taps=taps, a_data_width=a_data_width, a_output_path=output_path
-    )
+    if a_save:
+        # Dump coefficients
+        output_path = Path(a_output_dir) / f"{title}_{a_data_width}b.txt"
+        __dump_taps_to_txt(
+            a_taps=taps, a_data_width=a_data_width, a_output_path=output_path
+        )
+    else:
+        return taps
 
 
 def generate_coefficients_least_squares():
