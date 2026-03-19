@@ -161,7 +161,6 @@ def generate_coefficients_remez(
     __plot_response(
         a_w=w, a_h=h, a_atten_db=a_attenuation_db, a_taps=taps, a_title=title
     )
-    plt.show()
     if a_save:
         # Dump coefficients
         output_path = Path(a_output_dir) / f"{title}_{a_data_width}b.txt"
@@ -169,7 +168,8 @@ def generate_coefficients_remez(
             a_taps=taps, a_data_width=a_data_width, a_output_path=output_path
         )
     else:
-        return taps
+        plt.show()
+    return taps
 
 
 def generate_coefficients_least_squares():

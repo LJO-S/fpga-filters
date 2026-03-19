@@ -3,7 +3,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 from collections import deque
 
-from generate_filter_coefficients import generate_coefficients_remez
+from scripts.synth_and_test.generate_filter_coefficients import (
+    generate_coefficients_remez,
+)
 
 
 class Polyphase_interpolate:
@@ -15,6 +17,8 @@ class Polyphase_interpolate:
         a_fs: int,
         a_multirate_factor: int,
         a_data_width: int = 16,
+        a_output_dir: str = f"../data/filter_coefficients/",
+        a_save: bool = False,
     ):
         # Characteristics
         self.fpass = a_fpass
@@ -25,7 +29,7 @@ class Polyphase_interpolate:
         self.data_width = a_data_width
 
         # Generate prototype filter
-        taps_prototype = generate_coefficients_remez(
+        self.taps_prototype = generate_coefficients_remez(
             a_attenuation_db=a_atten_db,
             a_gain=a_multirate_factor,
             a_fstop=[a_fstop],
@@ -33,14 +37,15 @@ class Polyphase_interpolate:
             a_fs=self.fs,
             a_data_width=a_data_width,
             a_multirate_factor=a_multirate_factor,
-            a_save=False,
+            a_output_dir=a_output_dir,
+            a_save=a_save,
         )
         # Generate Polyphase structure
 
         self.taps_polyphase = np.zeros(
-            (self.multirate_factor, len(taps_prototype) // self.multirate_factor)
+            (self.multirate_factor, len(self.taps_prototype) // self.multirate_factor)
         )
-        for i, coeff in enumerate(taps_prototype):
+        for i, coeff in enumerate(self.taps_prototype):
             # Create polyphase matrix
             self.taps_polyphase[i % self.multirate_factor][
                 i // self.multirate_factor
