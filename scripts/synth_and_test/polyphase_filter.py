@@ -18,7 +18,34 @@ class polyphase_intepolate_checker:
 
     def pre_config_wrapper(self, a_input_samples: int, a_cfg: dict):
         def pre_config(output_path) -> bool:
-            # Generate input data & Dump to text
+            # Report info
+            if self.polyphase_obj.fstop > self.polyphase_obj.fpass:
+                # LPF
+                bands = [
+                    0,
+                    self.polyphase_obj.fpass,
+                    self.polyphase_obj.fstop,
+                    0.5 * self.polyphase_obj.fs_new,
+                ]
+                gain = [self.polyphase_obj.multirate_factor, 0]
+                title = "LPF"
+            else:
+                # HPF
+                bands = [
+                    0,
+                    self.polyphase_obj.fstop,
+                    self.polyphase_obj.fpass,
+                    0.5 * self.polyphase_obj.fs_new,
+                ]
+                gain = [0, self.polyphase_obj.multirate_factor]
+                title = "HPF"
+
+            print(
+                f"=====================\nGenerated {title} with:\nN_taps={len(self.taps_prototype)}\nBands_hz={bands}\nG={gain}\n=====================\n"
+            )
+            # 1. Dump coefficients to text
+            self.polyphase_obj.dump_to_txt(a_output_dir=Path(output_path))
+            # 2. Generate input data & Dump to text
             input_path: Path = Path(output_path) / "input_data.txt"
             input_path.parent.mkdir(exist_ok=True, parents=True)
             with open(input_path, "w") as f:

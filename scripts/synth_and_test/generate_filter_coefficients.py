@@ -54,41 +54,14 @@ def __plot_response(a_w, a_h, a_atten_db, a_taps, a_title):
     ax2.set_title(f"{a_title} Coefficients")
 
 
-def __dump_taps_to_txt(a_taps: np.array, a_data_width: int, a_output_path: Path):
-    a_output_path.parent.mkdir(exist_ok=True, parents=True)
-    with open(a_output_path, "w") as f:
-        for coeff in a_taps:
-            # 1. Convert to fixed-point
-            fixed_point_val = int(round(coeff * (2.0**a_data_width)))
-
-            if a_data_width <= 0:
-                raise ValueError(f"Invalid width: {a_data_width}")
-
-            # 2. Format as binary string
-            # produce two's-complement bit pattern of 'width' bits
-            mask = (1 << a_data_width) - 1
-            val_masked = mask & fixed_point_val
-            coeff_bstring = format(val_masked, f"0{a_data_width}b")
-            if len(coeff_bstring) != a_data_width:
-                raise ValueError(
-                    "Binary string was longer than allowed depth! Actual=",
-                    len(coeff_bstring),
-                    "vs Expected=",
-                    a_data_width,
-                )
-            f.write(f"{coeff_bstring}\n")
-
-
 def generate_coefficients_remez(
     a_attenuation_db: float,
     a_gain: float,
     a_fstop: list,
     a_fpass: list,
     a_fs: float,
-    a_data_width: int,
-    a_output_dir: str = f"../data/filter_coefficients/",
     a_multirate_factor: int = None,
-    a_save: bool = True,
+    a_plot: bool = True,
 ):
     """
     Use SciPy's implementation of the Parks-McClellan algorithm. Works for LPF and HPF.
@@ -143,10 +116,6 @@ def generate_coefficients_remez(
         while nbr_of_taps % a_multirate_factor != 0:
             nbr_of_taps += 1
 
-    print(
-        f"=====================\nGenerating {title} with:\nN_taps={nbr_of_taps}\nBands_hz={bands}\nG={gain}\n=====================\n"
-    )
-
     # Remez Exchange algorithm (parks-mcclellan)
     taps = remez(
         numtaps=nbr_of_taps,
@@ -161,13 +130,10 @@ def generate_coefficients_remez(
     __plot_response(
         a_w=w, a_h=h, a_atten_db=a_attenuation_db, a_taps=taps, a_title=title
     )
-    if a_save:
-        # Dump coefficients
-        output_path = Path(a_output_dir) / f"{title}_{a_data_width}b.txt"
-        __dump_taps_to_txt(
-            a_taps=taps, a_data_width=a_data_width, a_output_path=output_path
+    if a_plot:
+        print(
+            f"=====================\nGenerated {title} with:\nN_taps={nbr_of_taps}\nBands_hz={bands}\nG={gain}\n=====================\n"
         )
-    else:
         plt.show()
     return taps
 
@@ -192,5 +158,5 @@ if __name__ == "__main__":
     fstop = [2.5e3]
     a_db = 60
     generate_coefficients_remez(
-        a_attenuation_db=a_db, a_fstop=fstop, a_fpass=fpass, a_fs=fs, a_data_width=28
+        a_attenuation_db=a_db, a_fstop=fstop, a_fpass=fpass, a_fs=fs
     )

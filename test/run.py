@@ -112,12 +112,17 @@ test = testbench.test("auto")
 # Configuration
 G_DATA_WIDTH = 28
 FS = 50.0e3
-BW = 13.0e3
 L = 4
+FPASS = 13.0e3
+FSTOP = (FS / 2) - FPASS
+while FSTOP < FPASS:
+    FSTOP += 0.1 * FS
+    if FSTOP > FS / 2:
+        raise ValueError("FSTOP too large!")
 
 cfg = dict(
-    fpass=BW,
-    fstop=(FS / 2) - BW,
+    fpass=FPASS,
+    fstop=FSTOP,
     atten_db=60,
     fs=FS,
     multirate_factor=L,
@@ -131,9 +136,7 @@ polyphase_obj = Polyphase_interpolate(
     a_atten_db=cfg["atten_db"],
     a_fs=cfg["fs"],
     a_multirate_factor=cfg["multirate_factor"],
-    a_data_width=cfg["data_width"],
-    # Save coefficient data to .txt file
-    a_save=False,
+    a_data_width=cfg["G_DATA_WIDTH"],
 )
 
 polyphase_checker_obj = polyphase_intepolate_checker(a_polyphase_object=polyphase_obj)

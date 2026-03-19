@@ -2,6 +2,7 @@ import math
 import numpy as np
 from matplotlib import pyplot as plt
 from collections import deque
+from pathlib import Path
 
 from scripts.synth_and_test.generate_filter_coefficients import (
     generate_coefficients_remez,
@@ -17,14 +18,14 @@ class Polyphase_interpolate:
         a_fs: int,
         a_multirate_factor: int,
         a_data_width: int = 16,
-        a_output_dir: str = f"../data/filter_coefficients/",
-        a_save: bool = False,
+        a_plot_coeffs: bool = False,
     ):
         # Characteristics
         self.fpass = a_fpass
         self.fstop = a_fstop
         self.atten_db = a_atten_db
-        self.fs = a_fs * a_multirate_factor
+        self.fs = a_fs
+        self.fs_new = a_fs * a_multirate_factor
         self.multirate_factor = a_multirate_factor
         self.data_width = a_data_width
 
@@ -34,14 +35,12 @@ class Polyphase_interpolate:
             a_gain=a_multirate_factor,
             a_fstop=[a_fstop],
             a_fpass=[a_fpass],
-            a_fs=self.fs,
-            a_data_width=a_data_width,
+            a_fs=self.fs_new,
             a_multirate_factor=a_multirate_factor,
-            a_output_dir=a_output_dir,
-            a_save=a_save,
+            a_plot=a_plot_coeffs,
         )
-        # Generate Polyphase structure
 
+        # Generate Polyphase structure
         self.taps_polyphase = np.zeros(
             (self.multirate_factor, len(self.taps_prototype) // self.multirate_factor)
         )
@@ -68,6 +67,35 @@ class Polyphase_interpolate:
             result.append(np.dot(self.taps_polyphase[phase], shift_register))
         return result
 
+    def dump_to_txt(self, a_output_dir):
+        # Dump coefficients
+        output_path = (
+            Path(a_output_dir)
+            / f"DUC{self.multirate_factor}_{self.data_width}b_fpass{int(self.fpass)}_fstop{int(self.fstop)}_fs{int(self.fs)}.txt"
+        )
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            for coeff in self.taps_prototype:
+                # 1. Convert to fixed-point
+                fixed_point_val = int(round(coeff * (2.0**self.data_width)))
+
+                if self.data_width <= 0:
+                    raise ValueError(f"Invalid width: {self.data_width}")
+
+                # 2. Format as binary string
+                # produce two's-complement bit pattern of 'width' bits
+                mask = (1 << self.data_width) - 1
+                val_masked = mask & fixed_point_val
+                coeff_bstring = format(val_masked, f"0{self.data_width}b")
+                if len(coeff_bstring) != self.data_width:
+                    raise ValueError(
+                        "Binary string was longer than allowed depth! Actual=",
+                        len(coeff_bstring),
+                        "vs Expected=",
+                        self.data_width,
+                    )
+                f.write(f"{coeff_bstring}\n")
+
 
 if __name__ == "__main__":
     # ================================
@@ -91,6 +119,7 @@ if __name__ == "__main__":
         a_atten_db=ATTEN_DB,
         a_fs=FS,
         a_multirate_factor=L,
+        a_plot_coeffs=True,
     )
     nbr_iter = polyphase_obj.read_input_data(input_data)
     result = list()
