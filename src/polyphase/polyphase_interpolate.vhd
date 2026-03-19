@@ -25,7 +25,7 @@ entity polyphase_interpolate is
         i_data  : in std_logic_vector(G_DATA_WIDTH - 1 downto 0);
         i_valid : in std_logic;
         -- Output
-        o_data  : out t_array_slv(G_MULTIRATE_FACTOR - 1 downto 0)(G_DATA_WIDTH - 1 downto 0);
+        o_data  : out t_array_slv(0 to G_MULTIRATE_FACTOR - 1)(G_DATA_WIDTH - 1 downto 0);
         o_valid : out std_logic
     );
 end entity polyphase_interpolate;
@@ -37,14 +37,14 @@ architecture rtl of polyphase_interpolate is
     constant C_CLIP_AND_OVF_LATENCY : natural                                                          := 3;
     constant C_COEFFS_PER_PHASE     : natural                                                          := G_FILTER_ORDER / G_MULTIRATE_FACTOR;
     constant C_BIT_GROWTH           : natural                                                          := integer(ceil(log2(real(C_COEFFS_PER_PHASE))));
-    constant C_ROUND_VALUE_SIGNED   : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (G_COEFF_WIDTH - 1 downto 0 => '1', (others => '0'));
-    constant C_CLIP_MAX_SIGNED      : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH => '0', (others => '1'));
-    constant C_CLIP_MIN_SIGNED      : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH => '1', (others => '0'));
+    constant C_ROUND_VALUE_SIGNED   : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (G_COEFF_WIDTH - 1 downto 0 => '1', others => '0');
+    constant C_CLIP_MAX_SIGNED      : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH => '0', others => '1');
+    constant C_CLIP_MIN_SIGNED      : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH => '1', others => '0');
     --------------------
     -- Functions
     --------------------
     -- The following code either initializes the memory values to a specified file or to all zeros to match hardware
-    function init_ram_from_file return t_array_slv is
+    impure function init_ram_from_file return t_array_slv is
         file v_read_file : text open read_mode is G_INIT_FILE;
         variable v_line  : line;
         variable v_slv   : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
@@ -65,8 +65,8 @@ architecture rtl of polyphase_interpolate is
     signal coefficient_memory : t_array_slv(0 to G_FILTER_ORDER - 1)(G_COEFF_WIDTH - 1 downto 0)                               := init_ram_from_file;
     signal r_data             : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                    := (others => '0');
     signal r_valid            : std_logic                                                                                      := '0';
-    signal r_valid_shreg      : std_logic_vector(C_COEFFS_PER_PHASE + C_CLIP_AND_OVF_LATENCY - 1 downto 0)                                          := (others => '0');
-    signal r_acc_clip         : t_array_slv(0 to G_FILTER_ORDER - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => '0');
+    signal r_valid_shreg      : std_logic_vector(C_COEFFS_PER_PHASE + C_CLIP_AND_OVF_LATENCY - 1 downto 0)                     := (others => '0');
+    signal r_acc_clip         : t_array_slv(0 to G_FILTER_ORDER - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
     --------------------
     -- Constants
     --------------------

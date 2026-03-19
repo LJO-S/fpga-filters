@@ -148,6 +148,7 @@ test.add_config(
         G_COEFF_WIDTH=cfg["G_DATA_WIDTH"],
         G_FILTER_ORDER=len(polyphase_obj.taps_prototype),
         G_MULTIRATE_FACTOR=cfg["multirate_factor"],
+        G_INIT_FILE=f'DUC{cfg["multirate_factor"]}_{cfg["G_DATA_WIDTH"]}b_fpass{int(cfg["fpass"])}_fstop{int(cfg["fstop"])}_fs{int(cfg["fs"])}.txt',
     ),
     pre_config=polyphase_checker_obj.pre_config_wrapper(
         a_input_samples=1024, a_cfg=cfg
