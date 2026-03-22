@@ -41,31 +41,35 @@ class polyphase_intepolate_checker:
                 title = "HPF"
 
             print(
-                f"=====================\nGenerated {title} with:\nN_taps={len(self.taps_prototype)}\nBands_hz={bands}\nG={gain}\n=====================\n"
+                f"=====================\nGenerated {title} with:\nN_taps={len(self.polyphase_obj.taps_prototype)}\nBands_hz={bands}\nG={gain}\n=====================\n"
             )
             # 1. Dump coefficients to text
             self.polyphase_obj.dump_to_txt(a_output_dir=Path(output_path))
             # 2. Generate input data & Dump to text
             input_path: Path = Path(output_path) / "input_data.txt"
             input_path.parent.mkdir(exist_ok=True, parents=True)
+            res = list()
             with open(input_path, "w") as f:
                 for i in range(a_input_samples):
                     # 1. Generate input data
-                    input_data = np.sin(
+                    input_data = np.cos(
                         2 * np.pi * a_cfg["input_frequency"] * i / a_cfg["fs"]
                     )
+                    res.append(input_data)
+                    print(input_data)
 
                     # 2. Convert to signed fixed-point
                     input_fixed = int(
-                        round(input_data * (2.0 ** (a_cfg["G_DATA_WIDTH"])))
+                        round(input_data * (2.0 ** (a_cfg["G_DATA_WIDTH"] - 1)))
                     )
 
                     # 3. Format as binary string
-                    input_fixed_bstring = format_as_bstring(input_fixed)
+                    input_fixed_bstring = format_as_bstring(
+                        a_val_fixed=input_fixed, a_data_width=a_cfg["G_DATA_WIDTH"]
+                    )
 
                     # 4. Write data
                     f.write(f"{input_fixed_bstring}\n")
-
             return True
 
         return pre_config
@@ -82,34 +86,39 @@ class polyphase_intepolate_checker:
             with open(output_data_path, "r") as f_out, open(
                 input_data_path, "r"
             ) as f_in:
-                for line in f_out:
-                    # 1. Read input/output data
-                    input_line = f_in.readline()
-                    input_data = input_line.split()
-                    output_line = line
-                    output_data = output_line.split()
+                for rd_idx, line in enumerate(f_out):
+                    # 1. Fetch input
+                    if rd_idx % int(a_cfg["multirate_factor"]) == 0:
+                        input_data = f_in.readline()
+                        input_data_f = BitArray(bin=input_data).int / (
+                            2.0 ** a_cfg["G_DATA_WIDTH"]
+                        )
 
-                    # 2. Convert to float
-                    input_data_f = BitArray(bin=input_data).int / (
-                        2.0 ** a_cfg["G_DATA_WIDTH"]
-                    )
+                    # 2. Fetch output
+                    output_data = line
                     output_data_f = BitArray(bin=output_data).int / (
                         2.0 ** a_cfg["G_DATA_WIDTH"]
                     )
 
-                    output_ref = self.polyphase_obj.tick(a_new_sample=input_data_f)
+                    # 3. Generate new reference data
+                    if rd_idx % int(a_cfg["multirate_factor"]) == 0:
+                        output_ref = self.polyphase_obj.tick(a_new_sample=input_data_f)
+                        print(f"New reference=", output_ref)
 
                     comparison = compare_value(
-                        actual=output_data_f, reference=output_ref
+                        a_actual=output_data_f,
+                        a_reference=output_ref[rd_idx % a_cfg["multirate_factor"]],
                     )
 
                     # 4. Compare to data output entry
+                    print()
+                    print("i=", rd_idx % a_cfg["multirate_factor"])
                     print()
                     print("input=", input_data_f)
                     print()
                     print("output=", output_data_f)
                     print()
-                    print("reference=", output_ref)
+                    print(f"reference=", output_ref[rd_idx % a_cfg["multirate_factor"]])
                     print()
                     print("=====================================================")
                     checker = checker and comparison

@@ -3,6 +3,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from collections import deque
 from pathlib import Path
+from bitstring import BitArray
+
 
 from scripts.synth_and_test.generate_filter_coefficients import (
     generate_coefficients_remez,
@@ -75,9 +77,12 @@ class Polyphase_interpolate:
         )
         output_path.parent.mkdir(exist_ok=True, parents=True)
         with open(output_path, "w") as f:
-            for coeff in self.taps_prototype:
+            for i, coeff in enumerate(self.taps_prototype):
+                print("i=", i)
+                print("Coeff=", coeff)
                 # 1. Convert to fixed-point
-                fixed_point_val = int(round(coeff * (2.0**self.data_width)))
+                fixed_point_val = int(round(coeff * (2.0 ** (self.data_width - 1))))
+                print("Coeff_Fixed=", fixed_point_val)
 
                 if self.data_width <= 0:
                     raise ValueError(f"Invalid width: {self.data_width}")
@@ -87,6 +92,15 @@ class Polyphase_interpolate:
                 mask = (1 << self.data_width) - 1
                 val_masked = mask & fixed_point_val
                 coeff_bstring = format(val_masked, f"0{self.data_width}b")
+                print("Coeff_BSTRING=", coeff_bstring)
+                print(
+                    "Coeff_FixedPointBack=",
+                    BitArray(bin=coeff_bstring).int,
+                )
+                print(
+                    "Coeff_Back=",
+                    BitArray(bin=coeff_bstring).int / (2.0**self.data_width),
+                )
                 if len(coeff_bstring) != self.data_width:
                     raise ValueError(
                         "Binary string was longer than allowed depth! Actual=",

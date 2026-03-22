@@ -27,20 +27,20 @@ architecture bench of polyphase_interpolate_tb is
     -- Generics
     constant TB_INIT_FILE : string := output_path(runner_cfg) & "/" & G_INIT_FILE;
     -- Ports
-    signal clk     : std_logic := '0';
-    signal i_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
-    signal i_valid : std_logic;
+    signal clk     : std_logic                                   := '0';
+    signal i_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal i_valid : std_logic                                   := '0';
     signal o_data  : t_array_slv(0 to G_MULTIRATE_FACTOR - 1)(G_DATA_WIDTH - 1 downto 0);
     signal o_valid : std_logic;
     -- Testbench
     type t_tb_array_float is array (0 to G_MULTIRATE_FACTOR - 1) of real;
 
-    signal tb_input_data_float  : real             := 0.0;
-    signal tb_output_data_float : t_tb_array_float := (others => 0.0);
-    signal tb_auto_set          : boolean          := false;
-    signal tb_auto_done         : boolean          := false;
-    signal auto_data_input      : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
-    signal auto_data_valid      : std_logic;
+    signal tb_input_data_float  : real                                        := 0.0;
+    signal tb_output_data_float : t_tb_array_float                            := (others => 0.0);
+    signal tb_auto_set          : boolean                                     := false;
+    signal tb_auto_done         : boolean                                     := false;
+    signal auto_data_input      : std_logic_vector(G_DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal auto_data_valid      : std_logic                                   := '0';
     -- Procedure
     procedure wait_clock (clk_ticks : integer) is
     begin
@@ -66,12 +66,14 @@ begin
             BINARY_READ(v_line, v_data_input);
             auto_data_input <= v_data_input;
             auto_data_valid <= '1';
+            -- wait_clock(1);
+            -- auto_data_input <= (others => '0');
+            -- auto_data_valid <= '0';
             wait_clock(1);
-            auto_data_input <= (others => '0');
-            auto_data_valid <= '0';
-            wait_clock(2);
         end loop;
-        tb_auto_done <= true;
+        auto_data_input <= (others => '0');
+        auto_data_valid <= '0';
+        tb_auto_done    <= true;
         wait;
     end process p_read_input_file;
     -- ================================================================
@@ -91,10 +93,10 @@ begin
                 for phase in 0 to G_MULTIRATE_FACTOR - 1 loop
                     v_output_slv := o_data(phase);
                     write(v_line, v_output_slv, right, o_data'length + 4);
+                    -- Write output obtained
+                    -- Write to file
+                    writeline(v_write_file, v_line);
                 end loop;
-                -- Write output obtained
-                -- Write to file
-                writeline(v_write_file, v_line);
             end if;
         end if;
     end process p_write_output_file;
@@ -130,7 +132,7 @@ begin
     end process main;
     -- ===================================================================
     -- Update debugs
-    tb_input_data_float  <= real(to_integer(signed(i_data))) / (2.0 ** G_DATA_WIDTH);
+    tb_input_data_float <= real(to_integer(signed(i_data))) / (2.0 ** G_DATA_WIDTH);
     g_output_debug : for phase in 0 to G_MULTIRATE_FACTOR - 1 generate
         tb_output_data_float(phase) <= real(to_integer(signed(o_data(phase)))) / (2.0 ** G_DATA_WIDTH);
     end generate;

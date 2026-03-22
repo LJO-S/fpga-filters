@@ -16,9 +16,9 @@ def format_as_bstring(a_val_fixed: int, a_data_width: int):
     # produce two's-complement bit pattern of 'width' bits
     mask = (1 << a_data_width) - 1
     val_masked = mask & a_val_fixed
-    bstring = format(val_masked, f"0{1 << a_data_width}b")
+    bstring = format(val_masked, f"0{a_data_width}b")
 
-    if len(bstring) != 1 << a_data_width:
+    if len(bstring) != a_data_width:
         raise ValueError(
             "Binary string was longer than allowed depth! Actual=",
             len(bstring),

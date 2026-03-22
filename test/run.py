@@ -121,6 +121,7 @@ while FSTOP < FPASS:
         raise ValueError("FSTOP too large!")
 
 cfg = dict(
+    input_frequency=0.8 * FPASS,
     fpass=FPASS,
     fstop=FSTOP,
     atten_db=60,
@@ -142,7 +143,7 @@ polyphase_obj = Polyphase_interpolate(
 polyphase_checker_obj = polyphase_intepolate_checker(a_polyphase_object=polyphase_obj)
 
 test.add_config(
-    name=f'L={cfg["multirate_factor"]}_FS={cfg["fs"]}',
+    name=f'L={cfg["multirate_factor"]}_FS={int(cfg["fs"])}',
     generics=dict(
         G_DATA_WIDTH=cfg["G_DATA_WIDTH"],
         G_COEFF_WIDTH=cfg["G_DATA_WIDTH"],
@@ -150,10 +151,8 @@ test.add_config(
         G_MULTIRATE_FACTOR=cfg["multirate_factor"],
         G_INIT_FILE=f'DUC{cfg["multirate_factor"]}_{cfg["G_DATA_WIDTH"]}b_fpass{int(cfg["fpass"])}_fstop{int(cfg["fstop"])}_fs{int(cfg["fs"])}.txt',
     ),
-    pre_config=polyphase_checker_obj.pre_config_wrapper(
-        a_input_samples=1024, a_cfg=cfg
-    ),
-    # post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg),
+    pre_config=polyphase_checker_obj.pre_config_wrapper(a_input_samples=128, a_cfg=cfg),
+    post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg),
 )
 
 # And another testbench etc.
