@@ -125,7 +125,6 @@ def generate_coefficients_remez(
     )
 
     # Get coefficients
-    # TODO: Save fig instead
     w, h = freqz(taps, [1], worN=2000, fs=a_fs)
     __plot_response(
         a_w=w, a_h=h, a_atten_db=a_attenuation_db, a_taps=taps, a_title=title

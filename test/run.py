@@ -111,8 +111,8 @@ test = testbench.test("auto")
 
 # Configuration
 G_DATA_WIDTH = 28
-FS = 50.0e3
-L = 4
+FS = 60.0e3
+L = 8
 FPASS = 13.0e3
 FSTOP = (FS / 2) - FPASS
 while FSTOP < FPASS:
@@ -128,6 +128,8 @@ cfg = dict(
     fs=FS,
     multirate_factor=L,
     G_DATA_WIDTH=G_DATA_WIDTH,
+    G_DATA_WIDTH_FRAC=G_DATA_WIDTH-2,
+    G_COEFF_WIDTH=G_DATA_WIDTH,
 )
 
 # Generate taps etc
@@ -137,7 +139,7 @@ polyphase_obj = Polyphase_interpolate(
     a_atten_db=cfg["atten_db"],
     a_fs=cfg["fs"],
     a_multirate_factor=cfg["multirate_factor"],
-    a_data_width=cfg["G_DATA_WIDTH"],
+    a_data_width=cfg["G_COEFF_WIDTH"],
 )
 
 polyphase_checker_obj = polyphase_intepolate_checker(a_polyphase_object=polyphase_obj)
@@ -146,13 +148,13 @@ test.add_config(
     name=f'L={cfg["multirate_factor"]}_FS={int(cfg["fs"])}',
     generics=dict(
         G_DATA_WIDTH=cfg["G_DATA_WIDTH"],
-        G_COEFF_WIDTH=cfg["G_DATA_WIDTH"],
+        G_COEFF_WIDTH=cfg["G_COEFF_WIDTH"],
         G_FILTER_ORDER=len(polyphase_obj.taps_prototype),
         G_MULTIRATE_FACTOR=cfg["multirate_factor"],
         G_INIT_FILE=f'DUC{cfg["multirate_factor"]}_{cfg["G_DATA_WIDTH"]}b_fpass{int(cfg["fpass"])}_fstop{int(cfg["fstop"])}_fs{int(cfg["fs"])}.txt',
     ),
-    pre_config=polyphase_checker_obj.pre_config_wrapper(a_input_samples=128, a_cfg=cfg),
-    post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg),
+    pre_config=polyphase_checker_obj.pre_config_wrapper(a_input_samples=1024, a_cfg=cfg),
+    post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )
 
 # And another testbench etc.
