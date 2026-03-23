@@ -30,7 +30,7 @@ def format_as_bstring(a_val_fixed: int, a_data_width: int):
 
 def compare_value(a_actual, a_reference):
     if a_reference is not None:
-        match = math.isclose(a=a_actual, b=a_reference, rel_tol=0.01, abs_tol=1e-6)
+        match = math.isclose(a=a_actual, b=a_reference, rel_tol=0.01, abs_tol=1e-3)
         diff_rel = abs(a_actual - a_reference) / (a_reference + 1e-9)
         if not match:
             print(

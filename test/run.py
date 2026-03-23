@@ -2,7 +2,9 @@
 
 # ============================================================
 from pathlib import Path
-from vunit import VUnit
+from shutil import rmtree
+from vunit import VUnit, VUnitCLI
+from vunit.vivado import *
 
 import sys
 import os
@@ -19,8 +21,22 @@ def encode(config: dict) -> str:
 
 # ============================================================
 # Setup
+cli = VUnitCLI(description="VUnit project with Vivado Synthesis support")
+cli.parser.add_argument(
+    "--synth",
+    type=str,
+    default=None,
+    help="Run Vivado synthesis on the specified entity",
+)
+cli.parser.add_argument(
+    "--batch",
+    action="store_true",
+    default=False,
+    help="Run in batch mode",
+)
+args = cli.parse_args()
 
-VU = VUnit.from_argv(compile_builtins=False)
+VU = VUnit.from_args(args=args, compile_builtins=False)
 VU.add_vhdl_builtins()
 
 # Enable location preprocessing but exclude all but check_false to make the example less bloated
@@ -43,7 +59,6 @@ VU.enable_location_preprocessing(
     ]
 )
 VU.enable_check_preprocessing()
-
 # ============================================================
 # Directories
 
@@ -110,8 +125,8 @@ testbench = lib.entity("polyphase_interpolate_tb")
 test = testbench.test("auto")
 
 # Configuration
-G_DATA_WIDTH = 28
-FS = 60.0e3
+G_DATA_WIDTH = 16
+FS = 80.0e3
 L = 8
 FPASS = 13.0e3
 FSTOP = (FS / 2) - FPASS
@@ -128,7 +143,7 @@ cfg = dict(
     fs=FS,
     multirate_factor=L,
     G_DATA_WIDTH=G_DATA_WIDTH,
-    G_DATA_WIDTH_FRAC=G_DATA_WIDTH-2,
+    G_DATA_WIDTH_FRAC=G_DATA_WIDTH - 2,
     G_COEFF_WIDTH=G_DATA_WIDTH,
 )
 
@@ -153,7 +168,9 @@ test.add_config(
         G_MULTIRATE_FACTOR=cfg["multirate_factor"],
         G_INIT_FILE=f'DUC{cfg["multirate_factor"]}_{cfg["G_DATA_WIDTH"]}b_fpass{int(cfg["fpass"])}_fstop{int(cfg["fstop"])}_fs{int(cfg["fs"])}.txt',
     ),
-    pre_config=polyphase_checker_obj.pre_config_wrapper(a_input_samples=1024, a_cfg=cfg),
+    pre_config=polyphase_checker_obj.pre_config_wrapper(
+        a_input_samples=1024, a_cfg=cfg
+    ),
     post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )
 
@@ -161,5 +178,27 @@ test.add_config(
 # ============================================================
 
 VU.add_compile_option("modelsim.vcom_flags", ["+acc=npr", '+cover="sbcef'])
-
-VU.main()
+# ============================================================
+# Synthesize or simulate
+if args.synth:
+    print(f"--- Starting Vivado Synthesis for entity: {args.synth} ---")
+    root = Path(__file__).parent.resolve()
+    project_name = "vivado"
+    if (root / project_name).exists():
+        rmtree(root / project_name)
+    # Path to TCL script
+    tcl_script = (
+        Path(__file__).parent / ".." / "scripts" / "tcl" / "generate_project.tcl"
+    )
+    try:
+        run_vivado(
+            tcl_file_name=str(tcl_script),
+            tcl_args=[root, project_name, args.synth, src_dir, not (args.batch)],
+            vivado_path=None,  # Uses default 'vivado' command
+        )
+        print("--- Synthesis Complete! ---")
+    except Exception as e:
+        print(f"Synthesis failed: {e}")
+        sys.exit(1)
+else:
+    VU.main()
