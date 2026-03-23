@@ -1,5 +1,13 @@
 -------------------------------------------------------------------------------
--- Implements a polyphase interpolator
+-- Implements a Parallel Transposed Polyphase Interpolator Filter
+-- 
+-- Pros:
+--      > Can generate larger-than-CLK sample frequency due to parallel output
+--      > Can handle input data arriving at clk frequency
+-- Cons:
+--      > Parallel nature generates a large implementation
+-- 
+-- 
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -15,9 +23,9 @@ entity polyphase_interpolate is
     generic (
         G_DATA_WIDTH       : natural := 16;
         G_COEFF_WIDTH      : natural := 16;
-        G_FILTER_ORDER     : natural := 1;
-        G_MULTIRATE_FACTOR : natural := 1;
-        G_INIT_FILE        : string
+        G_FILTER_ORDER     : natural := 64;
+        G_MULTIRATE_FACTOR : natural := 4;
+        G_INIT_FILE        : string  := "../../data/filter_coefficients/DUC4_16b_fpass13000_fstop27000_fs80000.txt"
     );
     port (
         clk : in std_logic;
@@ -34,12 +42,11 @@ architecture rtl of polyphase_interpolate is
     --------------------
     -- Constants
     --------------------
-    constant C_LATENCY : natural := 5;
+    constant C_LATENCY : natural := 4;
 
     constant C_COEFF_FRAC_WIDTH   : natural                                                          := G_COEFF_WIDTH - 1;
     constant C_COEFFS_PER_PHASE   : natural                                                          := G_FILTER_ORDER / G_MULTIRATE_FACTOR;
     constant C_BIT_GROWTH         : natural                                                          := integer(ceil(log2(real(C_COEFFS_PER_PHASE))));
-    constant C_ROUND_VALUE_SIGNED : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (G_COEFF_WIDTH - 1 downto 0 => '1', others => '0');
     constant C_CLIP_MAX_SIGNED    : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH - 1 => '0', others => '1');
     constant C_CLIP_MIN_SIGNED    : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH - 1 => '1', others => '0');
     --------------------
@@ -78,66 +85,67 @@ begin
     -- ================================================================
     -- Combinatorial
     o_data  <= r_acc_clip;
-    o_valid <= r_valid_shreg(r_valid_shreg'high) and (i_valid);
+    o_valid <= r_valid_shreg(r_valid_shreg'high) and (r_valid);
     -- ================================================================
     p_register_input : process (clk)
     begin
         if rising_edge(clk) then
+            -- Pipe to ease timing
+            r_data  <= i_data;
+            r_valid <= i_valid;
             -- Shift valid
-            if (i_valid = '1') then
+            if (r_valid = '1') then
                 r_valid_shreg <= r_valid_shreg(r_valid_shreg'high - 1 downto r_valid_shreg'low) & '1';
             end if;
         end if;
     end process p_register_input;
     -- ================================================================
     g_gen_phase : for phase in 0 to G_MULTIRATE_FACTOR - 1 generate
-        signal r_delay_line  : t_array_slv(0 to C_COEFFS_PER_PHASE - 1)(G_DATA_WIDTH - 1 downto 0)        := (others => (others => '0'));
-        signal r_acc         : std_logic_vector(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => '0');
-        signal r_acc_round   : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH downto 0)               := (others => '0');
-        signal r_acc_shifted : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                               := (others => '0');
+        signal r_delay_line  : t_array_slv(0 to C_COEFFS_PER_PHASE - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
+        signal r_acc         : std_logic_vector(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                         := (others => '0');
+        signal r_acc_shifted : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                       := (others => '0');
     begin
         ---------------------------------------------------------------
+        ---------------------------------------------------------------
         p_delay_line : process (clk)
-            variable v_result : signed(G_DATA_WIDTH + G_COEFF_WIDTH - 1 downto 0)                := (others => '0');
-            variable v_acc    : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => '0');
+            variable v_result : signed(G_DATA_WIDTH + G_COEFF_WIDTH - 1 downto 0) := (others => '0');
         begin
             if rising_edge(clk) then
-                if (i_valid = '1') then
+                if (r_valid = '1') then
                     ------------------
-                    -- Delay Line
+                    -- MAC & Delay Line
                     ------------------
-                    r_delay_line <= i_data & r_delay_line(r_delay_line'low to r_delay_line'high - 1);
-                    ------------------
-                    -- Mult & accum
-                    ------------------
-                    v_acc := (others => '0');
+                    -- Note: this implements a Transposed filter
                     for tap in 0 to C_COEFFS_PER_PHASE - 1 loop
-                        v_result := signed(coefficient_memory(phase + (tap * G_MULTIRATE_FACTOR))) * signed(r_delay_line(tap));
-                        -- Note: Might be troublesome for large CLK or high tap count
-                        v_acc := v_acc + v_result;
+                        -- Multiply
+                        v_result := signed(coefficient_memory(phase + ((C_COEFFS_PER_PHASE - (tap + 1)) * G_MULTIRATE_FACTOR))) * signed(r_data);
+                        -- Accumulate delay line
+                        if (tap = 0) then
+                            r_delay_line(tap) <= std_logic_vector(resize(v_result, r_delay_line(0)'length));
+                        else
+                            r_delay_line(tap) <= std_logic_vector(resize(signed(r_delay_line(tap - 1)) + v_result, r_delay_line(0)'length));
+                        end if;
                     end loop;
-                    r_acc <= std_logic_vector(v_acc);
                 end if;
             end if;
         end process p_delay_line;
+        ---------------------------------------------------------------
         ---------------------------------------------------------------
         p_saturate_and_ovf : process (clk)
         begin
             if rising_edge(clk) then
                 ------------------
-                -- Round
+                -- PIPE 0
+                -- Fetch value
                 ------------------
-                -- Assume positive
-                r_acc_round <= resize(signed(r_acc) + C_ROUND_VALUE_SIGNED, r_acc_round'length);
-                if (r_acc(r_acc'high) = '1') then
-                    -- Negative
-                    r_acc_round <= resize(signed(r_acc) - C_ROUND_VALUE_SIGNED, r_acc_round'length);
-                end if;
+                r_acc    <= r_delay_line(r_delay_line'high);
                 ------------------
+                -- PIPE 1
                 -- Scale
                 ------------------
-                r_acc_shifted <= resize(shift_right(r_acc_round, C_COEFF_FRAC_WIDTH), r_acc_shifted'length);
+                r_acc_shifted <= resize(shift_right(signed(r_acc), C_COEFF_FRAC_WIDTH), r_acc_shifted'length);
                 ------------------
+                -- PIPE 2
                 -- Clip
                 ------------------
                 if (r_acc_shifted > C_CLIP_MAX_SIGNED) then
@@ -149,6 +157,7 @@ begin
                 end if;
             end if;
         end process p_saturate_and_ovf;
+        ---------------------------------------------------------------
         ---------------------------------------------------------------
     end generate g_gen_phase;
     -- ================================================================
