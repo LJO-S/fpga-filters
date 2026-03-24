@@ -9,8 +9,8 @@ use work.polyphase_pkg.all;
 --
 library vunit_lib;
 context vunit_lib.vunit_context;
-
-entity polyphase_interpolate_tb is
+-- 
+entity polyphase_interpolate_sequential_tb is
     generic (
         runner_cfg         : string;
         G_DATA_WIDTH       : natural;
@@ -21,7 +21,7 @@ entity polyphase_interpolate_tb is
     );
 end;
 
-architecture bench of polyphase_interpolate_tb is
+architecture bench of polyphase_interpolate_sequential_tb is
     -- Clock period
     constant clk_period : time := 5 ns;
     -- Generics
@@ -30,13 +30,12 @@ architecture bench of polyphase_interpolate_tb is
     signal clk     : std_logic                                   := '0';
     signal i_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0) := (others => '0');
     signal i_valid : std_logic                                   := '0';
-    signal o_data  : t_array_slv(0 to G_MULTIRATE_FACTOR - 1)(G_DATA_WIDTH - 1 downto 0);
+    signal o_ready : std_logic;
+    signal o_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
     signal o_valid : std_logic;
     -- Testbench
-    type t_tb_array_float is array (0 to G_MULTIRATE_FACTOR - 1) of real;
-
     signal tb_input_data_float  : real                                        := 0.0;
-    signal tb_output_data_float : t_tb_array_float                            := (others => 0.0);
+    signal tb_output_data_float : real                                        := 0.0;
     signal tb_auto_set          : boolean                                     := false;
     signal tb_auto_done         : boolean                                     := false;
     signal auto_data_input      : std_logic_vector(G_DATA_WIDTH - 1 downto 0) := (others => '0');
@@ -66,17 +65,18 @@ begin
             BINARY_READ(v_line, v_data_input);
             auto_data_input <= v_data_input;
             auto_data_valid <= '1';
-            -- wait_clock(1);
-            -- auto_data_input <= (others => '0');
-            -- auto_data_valid <= '0';
             wait_clock(1);
+            auto_data_input <= (others => '0');
+            auto_data_valid <= '0';
+            wait_clock(1);
+            wait until o_ready = '1';
+            wait_clock(2);
         end loop;
         auto_data_input <= (others => '0');
         auto_data_valid <= '0';
         tb_auto_done    <= true;
         wait;
     end process p_read_input_file;
-    -- ================================================================
     -- ===================================================================
     -- Assign inputs
     i_data  <= auto_data_input;
@@ -84,24 +84,20 @@ begin
     -- ===================================================================
     -- Write output file
     p_write_output_file : process (clk)
-        file v_write_file     : text open write_mode is output_path(runner_cfg) & "/" & "output_data.txt";
-        variable v_line       : line;
-        variable v_output_slv : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
+        file v_write_file : text open write_mode is output_path(runner_cfg) & "/" & "output_data.txt";
+        variable v_line   : line;
     begin
         if rising_edge(clk) then
             if (o_valid = '1') then
-                for phase in 0 to G_MULTIRATE_FACTOR - 1 loop
-                    v_output_slv := o_data(phase);
-                    write(v_line, v_output_slv, right, o_data'length + 4);
-                    -- Write output obtained
-                    -- Write to file
-                    writeline(v_write_file, v_line);
-                end loop;
+                -- Write output obtained
+                write(v_line, o_data, right, o_data'length + 4);
+                -- Write to file
+                writeline(v_write_file, v_line);
             end if;
         end if;
     end process p_write_output_file;
     -- ===================================================================
-    polyphase_interpolate_inst : entity work.polyphase_interpolate
+    polyphase_interpolate_sequential_inst : entity work.polyphase_interpolate_sequential
         generic map(
             G_DATA_WIDTH       => G_DATA_WIDTH,
             G_COEFF_WIDTH      => G_COEFF_WIDTH,
@@ -114,6 +110,7 @@ begin
             clk     => clk,
             i_data  => i_data,
             i_valid => i_valid,
+            o_ready => o_ready,
             o_data  => o_data,
             o_valid => o_valid
         );
@@ -130,11 +127,5 @@ begin
         end if;
         test_runner_cleanup(runner);
     end process main;
-    -- ===================================================================
-    -- Update debugs
-    tb_input_data_float <= real(to_integer(signed(i_data))) / (2.0 ** G_DATA_WIDTH);
-    g_output_debug : for phase in 0 to G_MULTIRATE_FACTOR - 1 generate
-        tb_output_data_float(phase) <= real(to_integer(signed(o_data(phase)))) / (2.0 ** G_DATA_WIDTH);
-    end generate;
-    -- ===================================================================
+    -- ================================================================
 end;

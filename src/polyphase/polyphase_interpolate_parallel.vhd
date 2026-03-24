@@ -19,7 +19,7 @@ use std.textio.all;
 use work.polyphase_pkg.all;
 -- 
 
-entity polyphase_interpolate is
+entity polyphase_interpolate_parallel is
     generic (
         G_DATA_WIDTH       : natural := 16;
         G_COEFF_WIDTH      : natural := 16;
@@ -36,9 +36,9 @@ entity polyphase_interpolate is
         o_data  : out t_array_slv(0 to G_MULTIRATE_FACTOR - 1)(G_DATA_WIDTH - 1 downto 0);
         o_valid : out std_logic
     );
-end entity polyphase_interpolate;
+end entity polyphase_interpolate_parallel;
 
-architecture rtl of polyphase_interpolate is
+architecture rtl of polyphase_interpolate_parallel is
     --------------------
     -- Constants
     --------------------
