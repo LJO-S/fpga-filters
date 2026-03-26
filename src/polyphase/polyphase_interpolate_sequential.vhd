@@ -71,11 +71,13 @@ architecture rtl of polyphase_interpolate_sequential is
     -- Signals
     --------------------
     signal coefficient_memory   : t_array_slv(0 to G_FILTER_ORDER - 1)(G_COEFF_WIDTH - 1 downto 0)                                                          := init_ram_from_file;
-    signal r_data               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                               := (others => '0');
-    signal r_valid, r_valid_out : std_logic                                                                                                                 := '0';
+    signal r_data, r_data_d1    : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                               := (others => '0');
+    signal r_valid, r_valid_d1  : std_logic                                                                                                                 := '0';
+    signal r_valid_out          : std_logic                                                                                                                 := '0';
     signal r_valid_post_proc    : std_logic                                                                                                                 := '0';
     signal r_valid_post_proc_d1 : std_logic                                                                                                                 := '0';
     signal r_valid_post_proc_d2 : std_logic                                                                                                                 := '0';
+    signal r_coeff              : t_array_slv(0 to C_COEFFS_PER_PHASE - 1)(G_COEFF_WIDTH - 1 downto 0)                                                      := (others => (others => '0'));
     signal r_delay_line         : t_array_slv(0 to G_MULTIRATE_FACTOR * (C_COEFFS_PER_PHASE - 1))(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
     signal r_acc                : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                                                          := (others => '0');
     signal r_acc_shifted        : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                                              := (others => '0');
@@ -118,11 +120,20 @@ begin
         variable v_result : signed(G_DATA_WIDTH + G_COEFF_WIDTH - 1 downto 0) := (others => '0');
     begin
         if rising_edge(clk) then
-            if (r_valid = '1') then
-                -- Note: this implements a Transposed filter
-                for tap in 0 to C_COEFFS_PER_PHASE - 1 loop
+            -- Note: this implements a Transposed filter
+            for tap in 0 to C_COEFFS_PER_PHASE - 1 loop
+                ---------------
+                -- PIPE 0
+                -- Get coefficient
+                ---------------
+                r_coeff(tap) <= coefficient_memory(((C_COEFFS_PER_PHASE - (tap + 1)) * G_MULTIRATE_FACTOR) + to_integer(r_phase_counter));
+                ---------------
+                -- PIPE 1
+                -- MAC
+                ---------------
+                if (r_valid_d1 = '1') then
                     -- Multiply
-                    v_result := signed(r_data) * signed(coefficient_memory(((C_COEFFS_PER_PHASE - (tap + 1)) * G_MULTIRATE_FACTOR) + to_integer(r_phase_counter))); -- TODO take a look at this bad boys order of coeffs
+                    v_result := signed(r_data_d1) * signed(r_coeff(tap));
                     -- Accumulate & delay line
                     if (tap = 0) then
                         r_delay_line(0) <= std_logic_vector(resize(v_result, r_delay_line(0)'length));
@@ -132,9 +143,12 @@ begin
                             r_delay_line(tap * G_MULTIRATE_FACTOR - (idx)) <= r_delay_line(tap * G_MULTIRATE_FACTOR - (idx) - 1);
                         end loop;
                     end if;
-                end loop;
-            end if;
-            r_valid_out <= r_valid;
+                end if;
+            end loop;
+            -- Pipe logic outside loop
+            r_valid_d1  <= r_valid;
+            r_data_d1   <= r_data;
+            r_valid_out <= r_valid_d1;
         end if;
     end process p_mac_and_delay_line;
     -- ================================================================

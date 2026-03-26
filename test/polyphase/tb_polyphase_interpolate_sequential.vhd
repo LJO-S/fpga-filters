@@ -70,7 +70,7 @@ begin
             auto_data_valid <= '0';
             wait_clock(1);
             wait until o_ready = '1';
-            -- wait_clock(10);
+            wait_clock(10);
         end loop;
         auto_data_input <= (others => '0');
         auto_data_valid <= '0';
