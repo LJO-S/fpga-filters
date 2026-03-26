@@ -22,9 +22,9 @@ entity polyphase_interpolate_sequential is
     generic (
         G_DATA_WIDTH       : natural := 16;
         G_COEFF_WIDTH      : natural := 16;
-        G_FILTER_ORDER     : natural := 64;
-        G_MULTIRATE_FACTOR : natural := 4;
-        G_INIT_FILE        : string  := "../../data/filter_coefficients/DUC4_16b_fpass13000_fstop27000_fs80000.txt"
+        G_FILTER_ORDER     : natural := 128;
+        G_MULTIRATE_FACTOR : natural := 8;
+        G_INIT_FILE        : string  := "../../data/filter_coefficients/DUC8_16b_fpass13000_fstop27000_fs80000.txt"
     );
     port (
         clk : in std_logic;
@@ -42,15 +42,11 @@ architecture rtl of polyphase_interpolate_sequential is
     --------------------
     -- Constants
     --------------------
-    constant C_COEFF_FRAC_WIDTH   : natural                                                          := G_COEFF_WIDTH - 1;
-    constant C_COEFFS_PER_PHASE   : natural                                                          := G_FILTER_ORDER / G_MULTIRATE_FACTOR;
-    constant C_BIT_GROWTH         : natural                                                          := integer(ceil(log2(real(C_COEFFS_PER_PHASE))));
-    constant C_CLIP_MAX_SIGNED    : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH - 1 => '0', others => '1');
-    constant C_CLIP_MIN_SIGNED    : signed(G_DATA_WIDTH - 1 downto 0)                                := (G_DATA_WIDTH - 1 => '1', others => '0');
-    --------------------
-    -- Types
-    --------------------
-    type t_phase_state is (IDLE, COUNT);
+    constant C_COEFF_FRAC_WIDTH : natural                           := G_COEFF_WIDTH - 1;
+    constant C_COEFFS_PER_PHASE : natural                           := G_FILTER_ORDER / G_MULTIRATE_FACTOR;
+    constant C_BIT_GROWTH       : natural                           := integer(ceil(log2(real(C_COEFFS_PER_PHASE))));
+    constant C_CLIP_MAX_SIGNED  : signed(G_DATA_WIDTH - 1 downto 0) := (G_DATA_WIDTH - 1 => '0', others => '1');
+    constant C_CLIP_MIN_SIGNED  : signed(G_DATA_WIDTH - 1 downto 0) := (G_DATA_WIDTH - 1 => '1', others => '0');
     --------------------
     -- Functions
     --------------------
@@ -74,63 +70,47 @@ architecture rtl of polyphase_interpolate_sequential is
     --------------------
     -- Signals
     --------------------
-    signal coefficient_memory                          : t_array_slv(0 to G_FILTER_ORDER - 1)(G_COEFF_WIDTH - 1 downto 0)                                                        := init_ram_from_file;
-    signal s_phase_state                               : t_phase_state                                                                                                           := IDLE;
-    signal r_data                                      : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                             := (others => '0');
-    signal r_valid, r_valid_phase                      : std_logic                                                                                                               := '0';
-    signal r_valid_out, r_valid_out_d1, r_valid_out_d2 : std_logic                                                                                                               := '0';
-    signal r_delay_line                                : t_array_slv(0 to G_MULTIRATE_FACTOR * C_COEFFS_PER_PHASE - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
-    signal r_acc                                       : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                                                        := (others => '0');
-    signal r_acc_shifted                               : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                                            := (others => '0');
-    signal r_acc_clip                                  : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                             := (others => '0');
-    signal r_phase_counter                             : unsigned(integer(ceil(log2(real(G_MULTIRATE_FACTOR)))) - 1 downto 0)                                                    := (others => '0');
-    --------------------
-    -- Constants
-    --------------------
+    signal coefficient_memory   : t_array_slv(0 to G_FILTER_ORDER - 1)(G_COEFF_WIDTH - 1 downto 0)                                                          := init_ram_from_file;
+    signal r_data               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                               := (others => '0');
+    signal r_valid, r_valid_out : std_logic                                                                                                                 := '0';
+    signal r_valid_post_proc    : std_logic                                                                                                                 := '0';
+    signal r_valid_post_proc_d1 : std_logic                                                                                                                 := '0';
+    signal r_valid_post_proc_d2 : std_logic                                                                                                                 := '0';
+    signal r_delay_line         : t_array_slv(0 to G_MULTIRATE_FACTOR * (C_COEFFS_PER_PHASE - 1))(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
+    signal r_acc                : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                                                          := (others => '0');
+    signal r_acc_shifted        : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                                              := (others => '0');
+    signal r_acc_clip           : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                               := (others => '0');
+    signal r_phase_counter      : unsigned(integer(ceil(log2(real(G_MULTIRATE_FACTOR)))) - 1 downto 0)                                                      := (others => '0');
+    signal w_ready              : std_logic;
 
 begin
     -- ================================================================
     -- Combinatorial
-    o_ready <= '1' when (s_phase_state = IDLE) else
+    w_ready <= '1' when (r_phase_counter >= G_MULTIRATE_FACTOR - 1) or (r_valid = '0') else
         '0';
+    o_ready <= w_ready;
     o_data  <= r_acc_clip;
-    o_valid <= r_valid_out_d2;
-    -- ================================================================
-    p_register_input : process (clk)
-    begin
-        if rising_edge(clk) then
-            -- Pipe to ease timing
-            r_data  <= i_data;
-            r_valid <= i_valid;
-        end if;
-    end process p_register_input;
+    o_valid <= r_valid_post_proc_d2;
     -- ================================================================
     p_phase_counter : process (clk)
     begin
         if rising_edge(clk) then
-            case s_phase_state is
-                    ------------------------------------------
-                when IDLE =>
-                    -- Default
-                    r_valid_phase   <= '0';
+            -- Default
+            r_phase_counter <= (others => '0');
+            if (r_valid = '1') then
+                -- Increment phase/"coefficient" counter
+                r_phase_counter <= r_phase_counter + 1;
+                if (r_phase_counter >= G_MULTIRATE_FACTOR - 1) then
+                    r_valid         <= '0';
                     r_phase_counter <= (others => '0');
-                    if (i_valid     <= '1') then
-                        s_phase_state   <= COUNT;
-                    end if;
-                    ------------------------------------------
-                when COUNT =>
-                    r_valid_phase   <= '1';
-                    r_phase_counter <= r_phase_counter + 1;
-                    if (r_phase_counter >= G_MULTIRATE_FACTOR - 1) then
-                        r_valid_phase   <= '0';
-                        r_phase_counter <= (others => '0');
-                        s_phase_state   <= IDLE;
-                    end if;
-                    ------------------------------------------
-                when others =>
-                    s_phase_state <= IDLE;
-                    ------------------------------------------
-            end case;
+                end if;
+            end if;
+
+            -- Read input (and override above 'r_valid')
+            if (i_valid = '1') and (w_ready = '1') then
+                r_data  <= i_data;
+                r_valid <= i_valid;
+            end if;
         end if;
     end process p_phase_counter;
     -- ================================================================
@@ -154,6 +134,7 @@ begin
                     end if;
                 end loop;
             end if;
+            r_valid_out <= r_valid;
         end if;
     end process p_mac_and_delay_line;
     -- ================================================================
@@ -164,16 +145,16 @@ begin
             -- PIPE 0
             -- Fetch value
             ------------------
-            r_acc       <= signed(r_delay_line(r_delay_line'high));
-            r_valid_out <= r_valid_phase;
-            ------------------
-            -- PIPE 1
-            -- Scale
-            ------------------
-            r_acc_shifted  <= resize(shift_right(r_acc, C_COEFF_FRAC_WIDTH), r_acc_shifted'length);
-            r_valid_out_d1 <= r_valid_out;
+            r_acc             <= signed(r_delay_line(r_delay_line'high));
+            r_valid_post_proc <= r_valid_out;
             ------------------
             -- PIPE 2
+            -- Scale
+            ------------------
+            r_acc_shifted        <= resize(shift_right(r_acc, C_COEFF_FRAC_WIDTH), r_acc_shifted'length);
+            r_valid_post_proc_d1 <= r_valid_post_proc;
+            ------------------
+            -- PIPE 3
             -- Clip
             ------------------
             if (r_acc_shifted > C_CLIP_MAX_SIGNED) then
@@ -183,7 +164,7 @@ begin
             else
                 r_acc_clip <= std_logic_vector(resize(r_acc_shifted, G_DATA_WIDTH));
             end if;
-            r_valid_out_d2 <= r_valid_out_d1;
+            r_valid_post_proc_d2 <= r_valid_post_proc_d1;
         end if;
     end process p_saturate_and_ovf;
     -- ================================================================
