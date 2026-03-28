@@ -89,7 +89,7 @@ class Polyphase_interpolate:
                 mask = (1 << self.data_width) - 1
                 val_masked = mask & fixed_point_val
                 coeff_bstring = format(val_masked, f"0{self.data_width}b")
-                
+
                 if len(coeff_bstring) != self.data_width:
                     raise ValueError(
                         "Binary string was longer than allowed depth! Actual=",
@@ -100,45 +100,138 @@ class Polyphase_interpolate:
                 f.write(f"{coeff_bstring}\n")
 
 
+class Polyphase_decimate:
+    def __init__(
+        self,
+        a_fpass: float,
+        a_fstop: float,
+        a_atten_db: float,
+        a_fs: int,
+        a_multirate_factor: int,
+        a_data_width: int = 16,
+        a_plot_coeffs: bool = False,
+    ):
+        # Characteristics
+        self.fpass = a_fpass
+        self.fstop = a_fstop
+        self.atten_db = a_atten_db
+        self.fs = a_fs
+        self.fs_new = a_fs / a_multirate_factor
+        self.multirate_factor = a_multirate_factor
+        self.data_width = a_data_width
+        self.ddc_counter = -1
+
+        # Generate prototype filter
+        self.taps_prototype = generate_coefficients_remez(
+            a_attenuation_db=a_atten_db,
+            a_gain=1.0,
+            a_fstop=[a_fstop],
+            a_fpass=[a_fpass],
+            a_fs=self.fs,  # Use the fastest sample clk, in this case input fs
+            a_multirate_factor=a_multirate_factor,
+            a_plot=a_plot_coeffs,
+        )
+
+        # Generate Polyphase structure
+        self.taps_polyphase = np.zeros(
+            (self.multirate_factor, len(self.taps_prototype) // self.multirate_factor)
+        )
+        for i, coeff in enumerate(self.taps_prototype):
+            # Create polyphase matrix
+            self.taps_polyphase[i % self.multirate_factor][
+                i // self.multirate_factor
+            ] = coeff
+        self.input_register = deque([0.0] * self.taps_polyphase.shape[0])
+        self.shift_register = [
+            deque([0.0] * self.taps_polyphase.shape[1])
+            for _ in range(self.multirate_factor)
+        ]
+        self.input_data = list()
+
+    def read_input_data(self, a_input_data: list):
+        self.input_data = a_input_data
+        return len(self.input_data) // self.taps_polyphase.shape[1]
+
+    def tick(self, a_new_sample):
+        # Push new sample into input delay line
+        self.input_register.appendleft(a_new_sample)
+        self.input_register.pop()
+        # Compute output every M samples
+        self.ddc_counter += 1
+        if self.ddc_counter % self.multirate_factor == 0:
+            result = 0
+            for phase in range(self.multirate_factor):
+                # Update the delay line of each sub-filter with its respective sample
+                self.shift_register[phase].appendleft(self.input_register[phase])
+                self.shift_register[phase].pop()
+                # Accumulate the "Multiply-and-Accumulate"
+                result += np.dot(self.taps_polyphase[phase], self.shift_register[phase])
+            # Increment decimate counter
+            return result
+        return None
+
+
 if __name__ == "__main__":
+    # ================================
+    # TYPE
+    INTERPOLATE = False
     # ================================
     # PARAMTERS
     FS = 48.8e3
     INPUT_FREQ = 0.1 * FS
     FPASS = INPUT_FREQ
-    FSTOP = (FS / 2) - FPASS
+    # FSTOP = (FS / 2) - FPASS
+    FSTOP = FS - FPASS
     ATTEN_DB = 60
     L = 16
+    M = 4
     # ================================
     # A. Generate 1/10 FS sine
-    N = 128
+    N = 1024
     t = np.arange(N) * (1 / FS)
     input_data = np.sin(2 * np.pi * (INPUT_FREQ) * t)
 
     # B. Create Polyphase filter
-    polyphase_obj = Polyphase_interpolate(
-        a_fpass=FPASS,
-        a_fstop=FSTOP,
-        a_atten_db=ATTEN_DB,
-        a_fs=FS,
-        a_multirate_factor=L,
-        a_plot_coeffs=True,
-    )
+    if INTERPOLATE:
+        polyphase_obj = Polyphase_interpolate(
+            a_fpass=FPASS,
+            a_fstop=FSTOP,
+            a_atten_db=ATTEN_DB,
+            a_fs=FS,
+            a_multirate_factor=L,
+            a_plot_coeffs=True,
+        )
+    else:
+        FSTOP = (FS / M) - FPASS
+        polyphase_obj = Polyphase_decimate(
+            a_fpass=FPASS,
+            a_fstop=FSTOP,
+            a_atten_db=ATTEN_DB,
+            a_fs=FS,
+            a_multirate_factor=M,
+            a_plot_coeffs=True,
+        )
     nbr_iter = polyphase_obj.read_input_data(input_data)
     result = list()
     for input in input_data:
         output = polyphase_obj.tick(input)
-        for res in output:
-            result.append(res)
+        if INTERPOLATE:
+            for res in output:
+                result.append(res)
+        else:
+            # DECIMATE
+            if output is not None:
+                result.append(output)
     fig = plt.figure()
+    # ----------------------------------------------------------
     ax1 = fig.add_subplot(221)
     ax1.plot(input_data, marker="o")
-    # ax1.plot(input_data)
     ax1.grid(True)
+    # ----------------------------------------------------------
     ax2 = fig.add_subplot(223)
     ax2.plot(result, marker="o")
-    # ax2.plot(result)
     ax2.grid(True)
+    # ----------------------------------------------------------
     x_axis_freq = np.fft.rfftfreq(len(t), 1 / FS)
     fft_input = np.fft.rfft(input_data)
     magnitude = np.maximum(np.abs(fft_input), 1e-12)
@@ -147,14 +240,20 @@ if __name__ == "__main__":
     ax3.plot(x_axis_freq, magnitudeDB)
     ax3.set_ylim(-10, 100)
     ax3.grid(True)
-    t = np.arange(N * L) * (1 / (FS * L))
-    x_axis_freq = np.fft.rfftfreq(len(t), 1 / (FS * L))
-    fft_output = np.fft.rfft(result[91::])
+    # ----------------------------------------------------------
+    if INTERPOLATE:
+        new_fs = FS * L
+        t = np.arange(N * L) * (1 / new_fs)
+        x_axis_freq = np.fft.rfftfreq(len(t), 1 / new_fs)
+    else:
+        new_fs = FS / M
+        t = np.arange(N / M) * (1 / new_fs)
+        x_axis_freq = np.fft.rfftfreq(len(t), 1 / new_fs)
+    fft_output = np.fft.rfft(result)
     magnitude = np.maximum(np.abs(fft_output), 1e-12)
     magnitudeDB = 20 * np.log10(magnitude)
     ax4 = fig.add_subplot(224)
-    # ax4.plot(x_axis_freq, magnitudeDB)
-    ax4.plot(magnitudeDB)
+    ax4.plot(x_axis_freq, magnitudeDB)
     ax4.set_ylim(-10, 100)
     ax4.grid(True)
     plt.show()
