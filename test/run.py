@@ -10,8 +10,8 @@ import sys
 import os
 
 sys.path.append("../")
-from scripts.model.polyphase_filter import Polyphase_interpolate
-from scripts.synth_and_test.polyphase_filter import polyphase_intepolate_checker
+from scripts.model.polyphase_filter import Polyphase_interpolate, Polyphase_decimate
+from scripts.synth_and_test.polyphase_filter import polyphase_intepolate_checker, polyphase_decimate_checker
 
 
 # ============================================================
@@ -130,6 +130,7 @@ G_DATA_WIDTH = 16
 FS = 80.0e3
 L = 8
 FPASS = 13.0e3
+# TODO
 FSTOP = (FS / 2) - FPASS
 while FSTOP < FPASS:
     FSTOP += 0.1 * FS
@@ -228,6 +229,63 @@ test.add_config(
     ),
     pre_config=polyphase_checker_obj.pre_config_wrapper(
         a_input_samples=1024, a_cfg=cfg
+    ),
+    post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
+)
+
+# --------------------
+# Polyphase Decimate
+# Sequential
+# --------------------
+testbench = lib.entity("polyphase_decimate_sequential_tb")
+test = testbench.test("auto")
+
+# Configuration
+G_DATA_WIDTH = 16
+FS = 160.0e3
+M = 3
+FPASS = 13.0e3
+FSTOP = (FS/2) - FPASS
+while FSTOP < FPASS:
+    FSTOP += 0.1 * FS
+    if FSTOP > FS / 2:
+        raise ValueError("FSTOP too large!")
+
+cfg = dict(
+    input_frequency=0.8 * FPASS,
+    fpass=FPASS,
+    fstop=FSTOP,
+    atten_db=60,
+    fs=FS,
+    multirate_factor=M,
+    G_DATA_WIDTH=G_DATA_WIDTH,
+    G_DATA_WIDTH_FRAC=G_DATA_WIDTH - 2,
+    G_COEFF_WIDTH=G_DATA_WIDTH,
+)
+
+# Generate taps etc
+polyphase_obj = Polyphase_decimate(
+    a_fpass=cfg["fpass"],
+    a_fstop=cfg["fstop"],
+    a_atten_db=cfg["atten_db"],
+    a_fs=cfg["fs"],
+    a_multirate_factor=cfg["multirate_factor"],
+    a_data_width=cfg["G_COEFF_WIDTH"],
+)
+
+polyphase_checker_obj = polyphase_decimate_checker(a_polyphase_object=polyphase_obj)
+
+test.add_config(
+    name=f'M={cfg["multirate_factor"]}_FS={int(cfg["fs"])}',
+    generics=dict(
+        G_DATA_WIDTH=cfg["G_DATA_WIDTH"],
+        G_COEFF_WIDTH=cfg["G_COEFF_WIDTH"],
+        G_FILTER_ORDER=len(polyphase_obj.taps_prototype),
+        G_MULTIRATE_FACTOR=cfg["multirate_factor"],
+        G_INIT_FILE=f'DDC{cfg["multirate_factor"]}_{cfg["G_DATA_WIDTH"]}b_fpass{int(cfg["fpass"])}_fstop{int(cfg["fstop"])}_fs{int(cfg["fs"])}.txt',
+    ),
+    pre_config=polyphase_checker_obj.pre_config_wrapper(
+        a_input_samples=1024*16, a_cfg=cfg
     ),
     post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )

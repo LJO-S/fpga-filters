@@ -116,10 +116,10 @@ class Polyphase_decimate:
         self.fstop = a_fstop
         self.atten_db = a_atten_db
         self.fs = a_fs
-        self.fs_new = a_fs / a_multirate_factor
+        self.fs_new = int(np.ceil(a_fs / a_multirate_factor))
         self.multirate_factor = a_multirate_factor
         self.data_width = a_data_width
-        self.ddc_counter = -1
+        self.ddc_counter = 0
 
         # Generate prototype filter
         self.taps_prototype = generate_coefficients_remez(
@@ -169,6 +169,36 @@ class Polyphase_decimate:
             # Increment decimate counter
             return result
         return None
+    
+    def dump_to_txt(self, a_output_dir):
+        # Dump coefficients
+        output_path = (
+            Path(a_output_dir)
+            / f"DDC{self.multirate_factor}_{self.data_width}b_fpass{int(self.fpass)}_fstop{int(self.fstop)}_fs{int(self.fs)}.txt"
+        )
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            for i, coeff in enumerate(self.taps_prototype):
+                # 1. Convert to fixed-point
+                fixed_point_val = int(round(coeff * (2.0 ** (self.data_width - 1))))
+
+                if self.data_width <= 0:
+                    raise ValueError(f"Invalid width: {self.data_width}")
+
+                # 2. Format as binary string
+                # produce two's-complement bit pattern of 'width' bits
+                mask = (1 << self.data_width) - 1
+                val_masked = mask & fixed_point_val
+                coeff_bstring = format(val_masked, f"0{self.data_width}b")
+
+                if len(coeff_bstring) != self.data_width:
+                    raise ValueError(
+                        "Binary string was longer than allowed depth! Actual=",
+                        len(coeff_bstring),
+                        "vs Expected=",
+                        self.data_width,
+                    )
+                f.write(f"{coeff_bstring}\n")
 
 
 if __name__ == "__main__":

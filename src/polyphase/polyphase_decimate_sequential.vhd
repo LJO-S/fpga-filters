@@ -39,7 +39,7 @@ entity polyphase_decimate_sequential is
         G_COEFF_WIDTH      : natural := 16;
         G_FILTER_ORDER     : natural := 64;
         G_MULTIRATE_FACTOR : natural := 4;
-        G_INIT_FILE        : string  := "../../data/filter_coefficients/DDC4_16b_fpass13000_fstop27000_fs80000.txt"
+        G_INIT_FILE        : string
     );
     port (
         clk : in std_logic;
@@ -86,45 +86,56 @@ architecture rtl of polyphase_decimate_sequential is
     -- Signals
     --------------------
     signal coefficient_memory   : t_array_slv(0 to G_FILTER_ORDER - 1)(G_COEFF_WIDTH - 1 downto 0)                                                            := init_ram_from_file;
-    signal r_data, r_data_d1    : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                                 := (others => '0');
-    signal r_valid, r_valid_d1  : std_logic                                                                                                                   := '0';
-    signal r_valid_out          : std_logic                                                                                                                   := '0';
+    signal r_data               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                                 := (others => '0');
+    signal r_valid              : std_logic                                                                                                                   := '0';
+    signal r_dlyline_valid      : std_logic                                                                                                                   := '0';
     signal r_valid_post_proc    : std_logic                                                                                                                   := '0';
     signal r_valid_post_proc_d1 : std_logic                                                                                                                   := '0';
     signal r_coeff              : t_array_slv(0 to C_COEFFS_PER_PHASE - 1)(G_COEFF_WIDTH - 1 downto 0)                                                        := (others => (others => '0'));
     signal r_delay_line         : t_array_slv(0 to G_MULTIRATE_FACTOR * (C_COEFFS_PER_PHASE - 1))(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH_A - 1 downto 0) := (others => (others => '0'));
-    signal r_acc                : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH_A - 1 downto 0)                                                          := (others => '0');
+    signal r_acc                : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH_A + C_BIT_GROWTH_B - 1 downto 0)                                         := (others => '0');
     signal r_acc_valid          : std_logic                                                                                                                   := '0';
     signal r_acc_shifted        : signed(G_DATA_WIDTH + C_BIT_GROWTH_A downto 0)                                                                              := (others => '0');
     signal r_acc_clip           : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                                                 := (others => '0');
     signal r_phase_counter      : unsigned(integer(ceil(log2(real(G_MULTIRATE_FACTOR)))) - 1 downto 0)                                                        := (others => '0');
 
+    signal r_read_accumulator    : std_logic := '0';
+    signal r_read_accumulator_d1 : std_logic := '0';
+
+    -- DEBUG
+    type t_array_real is array (natural range <>) of real;
 begin
     -- ================================================================
     -- Combinatorial
     o_data  <= r_acc_clip;
     o_valid <= r_valid_post_proc_d1;
     -- ================================================================
+    p_pipeline : process (clk)
+    begin
+        if rising_edge(clk) then
+            r_valid <= i_valid;
+            r_data  <= i_data;
+        end if;
+    end process p_pipeline;
+    -- ================================================================
+    -- Increment phase/"coefficient" counter
     p_phase_counter : process (clk)
     begin
         if rising_edge(clk) then
-            -- Default
-            r_phase_counter <= (others => '0');
-            if (r_valid = '1') then
-                -- Increment phase/"coefficient" counter
+            r_read_accumulator <= '0';
+            if (i_valid = '1') then
                 r_phase_counter <= r_phase_counter + 1;
                 if (r_phase_counter >= G_MULTIRATE_FACTOR - 1) then
-                    r_phase_counter <= (others => '0');
+                    r_read_accumulator <= '1';
+                    r_phase_counter    <= (others => '0');
                 end if;
             end if;
-            -- Read input (and override above 'r_valid')
-            r_valid <= i_valid;
-            r_data  <= i_data;
+            r_read_accumulator_d1 <= r_read_accumulator;
         end if;
     end process p_phase_counter;
     -- ================================================================
     p_mac_and_delay_line : process (clk)
-        variable v_result : signed(G_DATA_WIDTH + G_COEFF_WIDTH - 1 downto 0) := (others => '0');
+        variable v_result    : signed(G_DATA_WIDTH + G_COEFF_WIDTH - 1 downto 0) := (others => '0');
     begin
         if rising_edge(clk) then
             -- Note: this implements a Transposed filter
@@ -133,14 +144,14 @@ begin
                 -- PIPE 0
                 -- Get coefficient
                 ---------------
-                r_coeff(tap) <= coefficient_memory(((C_COEFFS_PER_PHASE - (tap + 1)) * G_MULTIRATE_FACTOR) + to_integer(r_phase_counter));
+                r_coeff(tap) <= coefficient_memory((tap * G_MULTIRATE_FACTOR) + to_integer(r_phase_counter));
                 ---------------
                 -- PIPE 1
                 -- MAC
                 ---------------
-                if (r_valid_d1 = '1') then
+                if (r_valid = '1') then
                     -- Multiply
-                    v_result := signed(r_data_d1) * signed(r_coeff(tap));
+                    v_result := signed(r_data) * signed(r_coeff(tap));
                     -- Accumulate & delay line
                     if (tap = 0) then
                         r_delay_line(0) <= std_logic_vector(resize(v_result, r_delay_line(0)'length));
@@ -152,10 +163,7 @@ begin
                     end if;
                 end if;
             end loop;
-            -- Pipe logic outside loop
-            r_valid_d1  <= r_valid;
-            r_data_d1   <= r_data;
-            r_valid_out <= r_valid_d1;
+            r_dlyline_valid <= r_valid;
         end if;
     end process p_mac_and_delay_line;
     -- ================================================================
@@ -163,12 +171,20 @@ begin
     p_read_output : process (clk)
     begin
         if rising_edge(clk) then
-            r_acc_valid <= '0';
-            if (r_valid_out = '1') then
-                -- TODO: probably need a separate register for this
+            -- Accumulate
+            if (r_dlyline_valid = '1') then
                 r_acc <= r_acc + resize(signed(r_delay_line(r_delay_line'high)), r_acc'length);
-                if (r_phase_counter >= G_MULTIRATE_FACTOR - 1) then
-                    r_acc_valid <= '1';
+            end if;
+            -- Accumulator done
+            r_acc_valid <= '0';
+            if (r_read_accumulator_d1 = '1') then
+                r_acc_valid <= '1';
+            end if;
+            -- Reset accumulator
+            if (r_acc_valid = '1') then
+                r_acc <= (others => '0');
+                if (r_dlyline_valid = '1') then
+                    r_acc <= resize(signed(r_delay_line(r_delay_line'high)), r_acc'length);
                 end if;
             end if;
         end if;

@@ -25,12 +25,7 @@ architecture bench of polyphase_decimate_sequential_tb is
     -- Clock period
     constant clk_period : time := 5 ns;
     -- Generics
-    constant G_DATA_WIDTH       : natural := 16;
-    constant G_COEFF_WIDTH      : natural := 16;
-    constant G_FILTER_ORDER     : natural := 64;
-    constant G_MULTIRATE_FACTOR : natural := 4;
-    constant G_INIT_FILE        : string  := "../../data/filter_coefficients/DDC4_16b_fpass13000_fstop27000_fs80000.txt";
-    constant TB_INIT_FILE       : string  := output_path(runner_cfg) & "/" & G_INIT_FILE;
+    constant TB_INIT_FILE : string := output_path(runner_cfg) & "/" & G_INIT_FILE;
     -- Ports
     signal clk     : std_logic := '0';
     signal i_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
@@ -73,8 +68,6 @@ begin
             auto_data_input <= (others => '0');
             auto_data_valid <= '0';
             wait_clock(1);
-            wait until o_ready = '1';
-            wait_clock(10);
         end loop;
         auto_data_input <= (others => '0');
         auto_data_valid <= '0';
@@ -107,7 +100,7 @@ begin
             G_COEFF_WIDTH      => G_COEFF_WIDTH,
             G_FILTER_ORDER     => G_FILTER_ORDER,
             G_MULTIRATE_FACTOR => G_MULTIRATE_FACTOR,
-            G_INIT_FILE        => G_INIT_FILE
+            G_INIT_FILE        => TB_INIT_FILE
         )
         port map
         (
@@ -130,5 +123,8 @@ begin
         end if;
         test_runner_cleanup(runner);
     end process main;
-    -- ================================================================s
+    -- ================================================================
+    tb_input_data_float  <= real(to_integer(signed(i_data))) / (2.0 ** (G_DATA_WIDTH - 2));
+    tb_output_data_float <= real(to_integer(signed(o_data))) / (2.0 ** (G_DATA_WIDTH - 2));
+    -- ================================================================
 end;
