@@ -7,7 +7,7 @@ from bitstring import BitArray
 
 
 from scripts.synth_and_test.generate_filter_coefficients import (
-    generate_coefficients_remez,
+    generate_coefficients_remez, generate_coefficients_firwin
 )
 
 
@@ -30,15 +30,29 @@ class Halfband_filter:
         self.data_width = a_data_width
 
         # Generate filter coefficients
-        self.taps_prototype = generate_coefficients_remez(
-            a_attenuation_db=a_atten_db,
-            a_gain=a_gain,
-            a_fstop=[a_fstop],
-            a_fpass=[a_fpass],
-            a_fs=self.fs,
-            a_multirate_factor=None,
-            a_plot=a_plot_coeffs,
-        )
+        try: 
+            self.taps_prototype = generate_coefficients_remez(
+                a_attenuation_db=a_atten_db,
+                a_gain=a_gain,
+                a_fstop=[a_fstop],
+                a_fpass=[a_fpass],
+                a_fs=self.fs,
+                a_multirate_factor=None,
+                a_plot=a_plot_coeffs,
+            )
+            if np.isnan(self.taps_prototype).any():
+                raise ValueError
+        except:
+            self.taps_prototype = generate_coefficients_firwin(
+                a_attenuation_db=a_atten_db,
+                a_gain=a_gain,
+                a_fstop=[a_fstop],
+                a_fpass=[a_fpass],
+                a_fs=self.fs,
+                a_multirate_factor=None,
+                a_plot=a_plot_coeffs,
+            )
+        print(self.taps_prototype)
         self.taps_prototype[np.abs(self.taps_prototype) <= 1e-4] = 0.0
         # The nbr of taps are odd, but the code below re-uses a interpolate-by-2 structure
         self.taps_prototype = list(self.taps_prototype)
@@ -49,6 +63,7 @@ class Halfband_filter:
         for i, coeff in enumerate(self.taps_prototype):
             # Create polyphase matrix
             self.taps_polyphase[i % 2][i // 2] = coeff
+        print(self.taps_polyphase)
         self.shift_register = [
             deque([0.0] * self.taps_polyphase.shape[1]) for _ in range(2)
         ]
@@ -109,13 +124,11 @@ class Halfband_interpolate_part:
     def tick(self, a_new_sample):
         # Push new sample into delay line
         result = list()
-        print("new_sample=", a_new_sample)
         for phase in range(2):
             self.filter_obj.shift_register[phase].appendleft(a_new_sample)
             self.filter_obj.shift_register[phase].pop()
-            shift_register = list(self.filter_obj.shift_register[phase])
             result.append(
-                np.dot(self.filter_obj.taps_polyphase[phase], shift_register[phase])
+                np.dot(self.filter_obj.taps_polyphase[phase], self.filter_obj.shift_register[phase])
             )
         return result
 
@@ -190,7 +203,6 @@ class Halfband_interpolate:
         self.fpass = a_fpass
         self.atten_db = a_atten_db
         self.fs = a_fs
-        self.fs_new = a_fs * a_multirate_factor
         self.multirate_factor = a_multirate_factor
         self.data_width = a_data_width
 
@@ -199,13 +211,18 @@ class Halfband_interpolate:
         self.interpolate_chain = list()
 
         fs_new = a_fs
-        for _ in range(int(np.ceil(np.log2(a_multirate_factor)))):
+        for i in range(int(np.ceil(np.log2(a_multirate_factor)))):
             delta = (
                 fs_new / 2 - a_fpass
             ) * 2  # this might look complex but is actually pretty intuitive if you draw it
             fs_new *= 2
             fpass = fs_new / 4 - (delta / 2)
             fstop = fs_new / 4 + (delta / 2)
+            print("idx ",i)
+            print("delta ", delta)
+            print("fsnew ", fs_new)
+            print("fpass ", fpass)
+            print("fstop ", fstop)
             # Append to the chain of interpolate-by-2
             self.interpolate_chain.append(
                 Halfband_interpolate_part(
@@ -218,17 +235,20 @@ class Halfband_interpolate:
             )
 
     def tick(self, a_new_sample):
-        result = [
-            [0.0] * 2 ** (l + 1)
-            for l in range(int(np.ceil(np.log2(self.multirate_factor))))
-        ]
-        # Set first block
+        # Depth of chain
+        num_stages = int(np.ceil(np.log2(self.multirate_factor)))
+        result = [[] for _ in range(num_stages)]
+
+        # Stage 0: first interpolation
         result[0] = self.interpolate_chain[0].tick(a_new_sample=a_new_sample)
-        for l_idx, _ in enumerate(self.interpolate_chain[1::]):
-            for s_idx, s in enumerate(result[l_idx - 1]):
-                result[l_idx][2 * s_idx : 2 * s_idx + 1] = self.interpolate_chain[
-                    l_idx
-                ].tick(a_new_sample=s)
+
+        # Stages 1 to N: chained interpolation
+        for l_idx in range(1, num_stages):
+            prev_stage_samples = result[l_idx - 1]
+            curr_stage_output = [0.0] * (len(prev_stage_samples) * 2)
+            for s_idx, s in enumerate(prev_stage_samples):
+                curr_stage_output[2 * s_idx : 2 * s_idx + 2] = self.interpolate_chain[l_idx].tick(a_new_sample=s)
+            result[l_idx] = curr_stage_output
         return result[-1]
 
     def dump_to_txt(self, a_output_dir: str):
@@ -263,6 +283,8 @@ if __name__ == "__main__":
     result = list()
     for input in input_data:
         output = filter_obj.tick(a_new_sample=input)
+        for res in output:
+            result.append(res)
     fig = plt.figure()
     # ----------------------------------------------------------
     ax1 = fig.add_subplot(221)
@@ -282,8 +304,9 @@ if __name__ == "__main__":
     ax3.set_ylim(-10, 100)
     ax3.grid(True)
     # ----------------------------------------------------------
-    t = np.arange(N) * (1 / FS)
-    x_axis_freq = np.fft.rfftfreq(len(t), 1 / FS)
+    new_fs = FS * L
+    t = np.arange(N * L) * (1 / new_fs)
+    x_axis_freq = np.fft.rfftfreq(len(t), 1 / new_fs)
     fft_output = np.fft.rfft(result)
     magnitude = np.maximum(np.abs(fft_output), 1e-12)
     magnitudeDB = 20 * np.log10(magnitude)

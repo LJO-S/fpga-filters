@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import math
-from scipy.signal import remez, freqz
+from scipy.signal import remez, firwin, kaiserord, freqz
 from matplotlib import pyplot as plt
 import numpy as np
 from pathlib import Path
@@ -65,6 +65,10 @@ def generate_coefficients_remez(
 ):
     """
     Use SciPy's implementation of the Parks-McClellan algorithm. Works for LPF and HPF.
+
+    Note: For very large transition bands, this algorithm will break down as the passband and stopband
+    become so very tiny so there are not enough distinct frequency points to perform optimiziation. I found
+    this out when using the halfband iterations... Works absolutely perfectly for your run-of-the-mill polyphase though!!
     """
     fpass_1 = a_fpass[0]
     fstop_1 = a_fstop[0]
@@ -144,11 +148,93 @@ def generate_coefficients_least_squares():
     pass
 
 
-def generate_coefficients_window():
+def generate_coefficients_firwin(
+    a_attenuation_db: float,
+    a_gain: float,
+    a_fstop: list,
+    a_fpass: list,
+    a_fs: float,
+    a_multirate_factor: int = None,
+    a_plot: bool = True,
+):
     """
     Use SciPy's implementation of the Window method.
+
+    Note: Extremely robust for wide transition bands where Remez fails.
     """
-    pass
+    fpass_1 = a_fpass[0]
+    fstop_1 = a_fstop[0]
+    fpass_2 = 0
+    fstop_2 = 0
+    bpf_en = len(a_fstop) > 1
+    if bpf_en:
+        assert len(a_fstop) == 2, "No more than 2 stop frequences allowed!"
+        assert len(a_fpass) == 2, "Expected 2 fpass since 2 fstop was specified!"
+        fpass_2 = a_fpass[1]
+        fstop_2 = a_fstop[1]
+
+    # Get maximum number of taps required
+    nbr_of_taps_1 = _calculate_nbr_of_taps(
+        a_attenuation_db=a_attenuation_db, a_fstop=fstop_1, a_fpass=fpass_1, a_fs=a_fs
+    )
+    nbr_of_taps = nbr_of_taps_1
+
+    bands = list()
+    if bpf_en:
+        # BPF
+        nbr_of_taps_2 = _calculate_nbr_of_taps(
+            a_attenuation_db=a_attenuation_db,
+            a_fstop=fstop_2,
+            a_fpass=fpass_2,
+            a_fs=a_fs,
+        )
+        nbr_of_taps = max(nbr_of_taps_1, nbr_of_taps_2)
+        cutoff = [(fpass_1 + fstop_1)/2, (fpass2+fstop_2)/2]
+        pass_zero = False
+        title = "BPF (Window)"
+    elif fstop_1 > fpass_1:
+        # LPF
+        cutoff = (fpass_1 + fstop_1)/2
+        pass_zero = True
+        title = "LPF (Window)"
+    else:
+        # HPF
+        cutoff = (fpass_1 + fstop_1)/2
+        pass_zero = False
+        title = "HPF (Window)"
+
+    nbr_of_taps, beta = kaiserord(a_attenuation_db, (fstop_1 - fpass_1) / (0.5 * a_fs))
+
+    # Create odd number of taps
+    if a_multirate_factor is None:
+        if nbr_of_taps % 2 == 0:
+            nbr_of_taps += 1
+    else:
+        while nbr_of_taps % a_multirate_factor != 0:
+            nbr_of_taps += 1
+
+    # FIR Window algorithm (use 'hamming' by default)
+    taps = firwin(
+        numtaps=nbr_of_taps,
+        cutoff=cutoff,
+        window=('kaiser', beta),
+        pass_zero=pass_zero,
+        fs=a_fs,
+        scale=False
+    )
+    taps *= a_gain
+
+    # Get coefficients
+    w, h = freqz(taps, [1], worN=2000, fs=a_fs)
+    __plot_response(
+        a_w=w, a_h=h, a_atten_db=a_attenuation_db, a_taps=taps, a_title=title
+    )
+    if a_plot:
+        print(
+            f"=====================\nGenerated {title} with:\nN_taps={nbr_of_taps}\nBands_hz={bands}\nG={gain}\n=====================\n"
+        )
+        plt.show()
+    return taps
 
 
 if __name__ == "__main__":
