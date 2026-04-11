@@ -52,17 +52,23 @@ class Halfband_filter:
                 a_multirate_factor=None,
                 a_plot=a_plot_coeffs,
             )
-        print(self.taps_prototype)
+        
+        # Force 0s and 1s where close to 
         self.taps_prototype[np.abs(self.taps_prototype) <= 1e-4] = 0.0
+        self.taps_prototype[np.abs(self.taps_prototype) >= 0.999] = 1.0
+
         # The nbr of taps are odd, but the code below re-uses a interpolate-by-2 structure
-        self.taps_prototype = list(self.taps_prototype)
-        self.taps_prototype.append(0.0)
+        if len(self.taps_prototype) % 2 != 0:
+            self.taps_prototype = np.append(self.taps_prototype, 0.0)
+        print(self.taps_prototype)
 
         # Generate Polyphase structure
         self.taps_polyphase = np.zeros((2, len(self.taps_prototype) // 2))
         for i, coeff in enumerate(self.taps_prototype):
             # Create polyphase matrix
             self.taps_polyphase[i % 2][i // 2] = coeff
+
+        print(len(self.taps_polyphase[0]))
         print(self.taps_polyphase)
         self.shift_register = [
             deque([0.0] * self.taps_polyphase.shape[1]) for _ in range(2)
@@ -316,4 +322,3 @@ if __name__ == "__main__":
     ax4.grid(True)
     plt.show()
 
-    # print("Hello world!")

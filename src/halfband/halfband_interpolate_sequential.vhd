@@ -30,7 +30,7 @@ entity halfband_interpolate_sequential is
         G_COEFF_WIDTH      : natural := 16;
         G_FILTER_ORDER     : natural := 16;
         G_MULTIRATE_FACTOR : natural := 4;
-        G_INIT_FILE        : string  := "/mnt/tools/projects/fpga/fpga-filters/test/vunit_out/test_output/lib.halfband_interpolate_sequential_tb.M=8_FS=160000.auto_46a5fda0be16ee0f44f6f8e8c1930830c7f7bcfd/DDC8_16b_fpass13000_fstop67000_fs160000.txt"
+        G_INIT_FILE        : string
     );
     port (
         clk : in std_logic;
@@ -60,6 +60,7 @@ begin
     -- Combinatorial
     o_data           <= r_stage_data(r_stage_data'high);
     o_valid          <= r_stage_valid(r_stage_valid'high);
+    o_ready          <= r_ready_out;
     r_stage_data(0)  <= i_data;
     r_stage_valid(0) <= i_valid and (r_ready_out or r_stage_valid(r_stage_valid'high));
     -- ================================================================
@@ -75,12 +76,15 @@ begin
         end if;
     end process;
     -- ================================================================
-    g_generate_interpolate_subblock : for i in 0 to C_NUM_STAGES - 1 generate
-        signal w_stage_data_out  : t_array_slv(0 to 1)(G_DATA_WIDTH - 1 downto 0);
-        signal w_stage_valid_out : std_logic;
-        signal r_fifo_count      : unsigned(1 downto 0)                           := (others => '0');
-        signal r_fifo            : t_array_slv(0 to 3)(G_DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+    g_generate_interpolate_stage : for i in 0 to C_NUM_STAGES - 1 generate
+        signal w_stage_data_out     : t_array_slv(0 to 1)(G_DATA_WIDTH - 1 downto 0);
+        signal w_stage_data_out_slv : std_logic_vector(2 * G_DATA_WIDTH - 1 downto 0);
+        signal w_stage_valid_out    : std_logic;
+        signal w_fifo_empty         : std_logic;
+        signal w_fifo_rd_data       : std_logic_vector(2 * G_DATA_WIDTH - 1 downto 0);
+        signal r_sel                : std_logic := '0';
     begin
+        ---------------------------------------------------
         halfband_interpolate_stage_inst : entity work.halfband_interpolate_stage
             generic map(
                 G_DATA_WIDTH   => G_DATA_WIDTH,
@@ -96,44 +100,45 @@ begin
                 o_data  => w_stage_data_out,
                 o_valid => w_stage_valid_out
             );
-        -- Bridging Data
+        ---------------------------------------------------
+        w_stage_data_out_slv <= w_stage_data_out(1) & w_stage_data_out(0);
+        ---------------------------------------------------
+        sync_standard_fifo_inst : entity work.sync_standard_fifo
+            generic map(
+                G_DATA_WIDTH => 2 * G_DATA_WIDTH,
+                G_DATA_DEPTH => (2 ** i) - 1
+            )
+            port map
+            (
+                clk       => clk,
+                rst_sync  => '0',
+                i_wr_en   => w_stage_valid_out,
+                i_wr_data => w_stage_data_out_slv,
+                o_full    => open, -- Size guarantees that this should never occur
+                i_rd_en   => r_sel,
+                o_rd_data => w_fifo_rd_data,
+                o_empty   => w_fifo_empty
+            );
+        ---------------------------------------------------
+        -- Bridge data between stages
         p_bridge_data : process (clk)
         begin
             if rising_edge(clk) then
-                -- WRITE
-                if (w_stage_valid_out = '1') then
-                    if (r_wr_ptr = '0') then
-                        r_data_out_a <= w_stage_valid_out(0);
-                        r_data_out_b <= w_stage_valid_out(1);
-                    else
-                        r_data_out_a <= w_stage_valid_out(1);
-                        r_data_out_b <= w_stage_valid_out(0);
-                    end if;
-                    r_buf_count <= r_buf_count + 2;
-                    r_wr_ptr    <= not(r_wr_ptr);
-                end if;
-                -- READ
                 r_stage_data(i + 1)  <= (others => '0');
                 r_stage_valid(i + 1) <= '0';
-                if (r_buf_count > 0) and (w_ds_ready = '1') then
+                -- Drain FIFO
+                if (w_fifo_empty = '0') then
+                    r_sel                <= not(r_sel);
                     r_stage_valid(i + 1) <= '1';
-                    if (r_rd_ptr = '0') then
-                        r_stage_data(i + 1) <= r_data_out_a;
+                    if (r_sel = '0') then
+                        r_stage_data(i + 1) <= w_fifo_rd_data(G_DATA_WIDTH - 1 downto 0);
                     else
-                        r_stage_data(i + 1) <= r_data_out_b;
-                    end if;
-                    r_rd_ptr <= not(r_rd_ptr);
-
-                    -- Adjust count
-                    if (w_stage_valid_out = '1') then
-                        -- Writing +2 and reading -1 this cycle.
-                        r_buf_count <= r_buf_count + 1;
-                    else
-                        r_buf_count <= r_buf_count - 1;
+                        r_stage_data(i + 1) <= w_fifo_rd_data(2 * G_DATA_WIDTH - 1 downto G_DATA_WIDTH);
                     end if;
                 end if;
             end if;
         end process p_bridge_data;
+        ---------------------------------------------------
     end generate;
     -- ================================================================
 end architecture;

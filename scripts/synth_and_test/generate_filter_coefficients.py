@@ -114,10 +114,12 @@ def generate_coefficients_remez(
 
     # Create odd number of taps
     if a_multirate_factor is None:
-        if nbr_of_taps % 2 == 0:
+        while (nbr_of_taps + 1) % 4 != 0:
             nbr_of_taps += 1
     else:
-        while nbr_of_taps % a_multirate_factor != 0:
+        # If using multirate factor, keep existing logic but 
+        # ensure it doesn't violate the 4k-1 rule for half-bands
+        while nbr_of_taps % a_multirate_factor != 0 or (nbr_of_taps + 1) % 4 != 0:
             nbr_of_taps += 1
 
     # Remez Exchange algorithm (parks-mcclellan)
@@ -207,10 +209,12 @@ def generate_coefficients_firwin(
 
     # Create odd number of taps
     if a_multirate_factor is None:
-        if nbr_of_taps % 2 == 0:
+        while (nbr_of_taps + 1) % 4 != 0:
             nbr_of_taps += 1
     else:
-        while nbr_of_taps % a_multirate_factor != 0:
+        # If using multirate factor, keep existing logic but 
+        # ensure it doesn't violate the 4k-1 rule for half-bands
+        while nbr_of_taps % a_multirate_factor != 0 or (nbr_of_taps + 1) % 4 != 0:
             nbr_of_taps += 1
 
     # FIR Window algorithm (use 'hamming' by default)

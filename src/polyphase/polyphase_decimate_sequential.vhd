@@ -37,9 +37,9 @@ entity polyphase_decimate_sequential is
     generic (
         G_DATA_WIDTH       : natural := 16;
         G_COEFF_WIDTH      : natural := 16;
-        G_FILTER_ORDER     : natural := 64;
+        G_FILTER_ORDER     : natural := 16;
         G_MULTIRATE_FACTOR : natural := 4;
-        G_INIT_FILE        : string
+        G_INIT_FILE        : string  := "/mnt/tools/projects/fpga/fpga-filters/test/vunit_out/test_output/lib.polyphase_decimate_sequential_tb.M=8_FS=160000.auto_46a5fda0be16ee0f44f6f8e8c1930830c7f7bcfd/DDC8_16b_fpass13000_fstop67000_fs160000.txt"
     );
     port (
         clk : in std_logic;
