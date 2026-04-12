@@ -52,10 +52,10 @@ architecture rtl of halfband_interpolate_sequential is
     --------------------
     -- Signals
     --------------------
-    signal r_stage_data     : t_array_slv(0 to C_NUM_STAGES)(G_DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
-    signal r_stage_valid    : std_logic_vector(C_NUM_STAGES downto 0)                   := (others => '0');
-    signal r_stage_valid_d1 : std_logic                                                 := '0';
-    signal r_ready_out      : std_logic                                                 := '1';
+    signal r_stage_data    : t_array_slv(0 to C_NUM_STAGES)(G_DATA_WIDTH - 1 downto 0)            := (others => (others => '0'));
+    signal r_stage_valid   : std_logic_vector(C_NUM_STAGES downto 0)                              := (others => '0');
+    signal r_ready_out     : std_logic                                                            := '1';
+    signal r_ready_counter : unsigned(integer(ceil(log2(real(G_MULTIRATE_FACTOR)))) - 1 downto 0) := (others => '0');
 begin
     -- ================================================================
     -- Combinatorial
@@ -65,59 +65,31 @@ begin
     r_stage_data(0)  <= i_data;
     r_stage_valid(0) <= i_valid and r_ready_out;
     -- ================================================================
-    ----------------------------------------------------
-    -- A . Multi-stage ready output generation
-    g_ready_output_multi_stage_A : if C_NUM_STAGES > 1 and C_NUM_STAGES < 5 generate
-        p_ready_output : process (clk)
-        begin
-            if rising_edge(clk) then
-                if (i_valid = '1') then
-                    r_ready_out <= '0';
-                end if;
-                r_stage_valid_d1 <= r_stage_valid(C_NUM_STAGES - 2);
-                if (r_stage_valid(C_NUM_STAGES - 2) = '1') and r_stage_valid_d1 = '0' then
-                    r_ready_out <= '1';
+    -- Generate ready signal for output stage
+    p_ready_out : process (clk)
+    begin
+        if rising_edge(clk) then
+            -- Start machinery when valid input is received and ready is high
+            if (i_valid = '1') and (r_ready_out = '1') then
+                r_ready_out <= '0';
+                r_ready_counter <= r_ready_counter + 1;
+            end if;
+            -- Count clock cycles until ready can be re-asserted
+            if (r_ready_out = '0') then
+                r_ready_counter <= r_ready_counter + 1;
+                if (r_ready_counter >= G_MULTIRATE_FACTOR - 2) then
+                    r_ready_out     <= '1';
+                    r_ready_counter <= (others => '0');
                 end if;
             end if;
-        end process p_ready_output;
-    end generate;
-    -- B . Multi-stage ready output generation
-    g_ready_output_multi_stage_B : if C_NUM_STAGES >= 5 generate
-        p_ready_output : process (clk)
-        begin
-            if rising_edge(clk) then
-                if (i_valid = '1') then
-                    r_ready_out <= '0';
-                end if;
-                r_stage_valid_d1 <= r_stage_valid(C_NUM_STAGES);
-                if (r_stage_valid(C_NUM_STAGES) = '1') and r_stage_valid_d1 = '0' then
-                    r_ready_out <= '1';
-                end if;
-            end if;
-        end process p_ready_output;
-    end generate;
-    ----------------------------------------------------
-    -- Single-stage ready output generation
-    g_ready_output_single_stage : if C_NUM_STAGES = 1 generate
-        p_ready_output : process (clk)
-        begin
-            if rising_edge(clk) then
-                if (i_valid = '1') then
-                    r_ready_out <= '0';
-                end if;
-                r_stage_valid_d1 <= r_stage_valid(1);
-                if (r_stage_valid(1) = '1') and r_stage_valid_d1 = '0' then
-                    r_ready_out <= '1';
-                end if;
-            end if;
-        end process p_ready_output;
-    end generate;
-    ----------------------------------------------------
+        end if;
+    end process p_ready_out;
+
     -- Error generation for unsupported configurations
     g_ready_output_error : if C_NUM_STAGES = 0 generate
         assert FALSE report "No stages?!" severity FAILURE;
     end generate;
-    ----------------------------------------------------
+
     -- ================================================================
     g_generate_interpolate_stage : for i in 0 to C_NUM_STAGES - 1 generate
         constant C_INIT_FILE        : string := G_INIT_FILE & "_" & integer'image(i) & ".txt";

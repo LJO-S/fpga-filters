@@ -12,7 +12,7 @@ package halfband_filter_pkg is
     type t_halfband_tap_number is array (0 to C_NUM_STAGES - 1) of integer;
     constant C_NUM_TAPS_UPPER : t_halfband_tap_number := (
     {%- for stage in stages %}
-        {{ "%-4d"|format(stage.filter_obj.taps_polyphase[0]|length) }}{{ "," if not loop.last }} -- Stage {{ loop.index0 }}
+        {{ loop.index0 }} => {{ "%-4d"|format(stage.filter_obj.taps_polyphase[0]|length) }}{{ "," if not loop.last }} -- Stage {{ loop.index0 }}
     {%- endfor %}
     );
 
@@ -20,7 +20,7 @@ package halfband_filter_pkg is
     -- This represents the number of delay registers before the '1'
     constant C_NUM_TAPS_LOWER : t_halfband_tap_number := (
     {%- for stage in stages %}
-        {{ "%-4d"|format(stage.lower_delay_index) }}{{ "," if not loop.last }} -- Stage {{ loop.index0 }}
+        {{ loop.index0 }} => {{ "%-4d"|format(stage.lower_delay_index) }}{{ "," if not loop.last }} -- Stage {{ loop.index0 }}
     {%- endfor %}
     );
 
