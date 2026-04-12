@@ -7,7 +7,6 @@ src.files = [
     'src/**/*.vhd',
 ]
 test.files = [
-    #'src/**/*.vhd',
     'test/*/*.vhd',
     'test/*.vhd'
 ]

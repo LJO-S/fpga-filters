@@ -302,8 +302,8 @@ test = testbench.test("auto")
 # Configuration
 G_DATA_WIDTH = 16
 FS = 48.8e3
-L = 8
-FPASS = 13.0e3
+L = 32
+FPASS = 13.2e3
 
 cfg = dict(
     input_frequency=0.8 * FPASS,
@@ -324,22 +324,23 @@ halfband_obj = Halfband_interpolate(
     a_multirate_factor=cfg["multirate_factor"],
     a_data_width=cfg["G_COEFF_WIDTH"],
 )
+# Generate package file for synthesis
+halfband_obj.generate_vhdl_package(a_jinja_path="../scripts/synth_and_test/jinja", a_output_path="../src/halfband/halfband_interpolate_pkg.vhd")
 
-polyphase_checker_obj = halfband_intepolate_checker(a_polyphase_object=halfband_obj)
+halfband_checker_obj = halfband_intepolate_checker(a_halfband_object=halfband_obj)
 
 test.add_config(
     name=f'L={cfg["multirate_factor"]}_FS={int(cfg["fs"])}',
     generics=dict(
         G_DATA_WIDTH=cfg["G_DATA_WIDTH"],
         G_COEFF_WIDTH=cfg["G_COEFF_WIDTH"],
-        G_FILTER_ORDER=len(polyphase_obj.taps_prototype),
         G_MULTIRATE_FACTOR=cfg["multirate_factor"],
-        G_INIT_FILE=f'DDC{cfg["multirate_factor"]}_{cfg["G_DATA_WIDTH"]}b_fpass{int(cfg["fpass"])}_fstop{int(cfg["fstop"])}_fs{int(cfg["fs"])}.txt',
+        G_INIT_FILE=f'HBF_{cfg["G_COEFF_WIDTH"]}',
     ),
-    pre_config=polyphase_checker_obj.pre_config_wrapper(
-        a_input_samples=1024*16, a_cfg=cfg
+    pre_config=halfband_checker_obj.pre_config_wrapper(
+        a_input_samples=256, a_cfg=cfg
     ),
-    post_check=polyphase_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
+    post_check=halfband_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )
 
 # And another testbench etc.

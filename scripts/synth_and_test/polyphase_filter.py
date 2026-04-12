@@ -1,14 +1,8 @@
-import math
 import numpy as np
 from matplotlib import pyplot as plt
-from collections import deque
 from pathlib import Path
 from bitstring import BitArray
-from scipy.signal import remez, freqz
 
-from scripts.synth_and_test.generate_filter_coefficients import (
-    generate_coefficients_remez,
-)
 from scripts.synth_and_test.utils import format_as_bstring, compare_value, save_postcheck_plot
 from ..model.polyphase_filter import Polyphase_interpolate, Polyphase_decimate
 

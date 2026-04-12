@@ -15,7 +15,6 @@ entity halfband_interpolate_sequential_tb is
         runner_cfg         : string;
         G_DATA_WIDTH       : natural;
         G_COEFF_WIDTH      : natural;
-        G_FILTER_ORDER     : natural;
         G_MULTIRATE_FACTOR : natural;
         G_INIT_FILE        : string
     );
@@ -63,6 +62,10 @@ begin
             readline(v_read_file, v_line);
             -- Data
             BINARY_READ(v_line, v_data_input);
+            if (o_ready = '0') then
+                wait until o_ready = '1';
+                wait_clock(1);
+            end if;
             auto_data_input <= v_data_input;
             auto_data_valid <= '1';
             wait_clock(1);
@@ -99,7 +102,6 @@ begin
         generic map(
             G_DATA_WIDTH       => G_DATA_WIDTH,
             G_COEFF_WIDTH      => G_COEFF_WIDTH,
-            G_FILTER_ORDER     => G_FILTER_ORDER,
             G_MULTIRATE_FACTOR => G_MULTIRATE_FACTOR,
             G_INIT_FILE        => TB_INIT_FILE
         )

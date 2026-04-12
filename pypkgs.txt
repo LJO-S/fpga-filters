@@ -3,3 +3,4 @@ vunit_hdl
 scipy
 bitstring
 matplotlib
+jinja2

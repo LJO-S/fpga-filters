@@ -1,4 +1,3 @@
-import math
 import numpy as np
 from matplotlib import pyplot as plt
 from collections import deque
@@ -39,6 +38,7 @@ class Halfband_filter:
                 a_fs=self.fs,
                 a_multirate_factor=None,
                 a_plot=a_plot_coeffs,
+                a_halfband_en=True,
             )
             if np.isnan(self.taps_prototype).any():
                 raise ValueError
@@ -51,10 +51,11 @@ class Halfband_filter:
                 a_fs=self.fs,
                 a_multirate_factor=None,
                 a_plot=a_plot_coeffs,
+                a_halfband_en=True,
             )
         
         # Force 0s and 1s where close to 
-        self.taps_prototype[np.abs(self.taps_prototype) <= 1e-4] = 0.0
+        self.taps_prototype[np.abs(self.taps_prototype) <= 2e-4] = 0.0
         self.taps_prototype[np.abs(self.taps_prototype) >= 0.999] = 1.0
 
         # The nbr of taps are odd, but the code below re-uses a interpolate-by-2 structure
@@ -80,7 +81,7 @@ class Halfband_filter:
         output_path = Path(a_output_dir) / f"HBF_{self.data_width}_{a_order_idx}.txt"
         output_path.parent.mkdir(exist_ok=True, parents=True)
         with open(output_path, "w") as f:
-            for _, coeff in enumerate(self.taps_prototype):
+            for _, coeff in enumerate(self.taps_polyphase[0]):
                 # 1. Convert to fixed-point
                 fixed_point_val = int(round(coeff * (2.0 ** (self.data_width - 1))))
 
@@ -138,8 +139,8 @@ class Halfband_interpolate_part:
             )
         return result
 
-    def dump_to_txt(self, a_output_dir):
-        self.filter_obj.dump_to_txt(a_output_dir=a_output_dir)
+    def dump_to_txt(self, a_output_dir, a_order_idx):
+        self.filter_obj.dump_to_txt(a_output_dir=a_output_dir, a_order_idx=a_order_idx)
 
 
 class Halfband_decimate_part:
@@ -192,8 +193,8 @@ class Halfband_decimate_part:
             return result
         return None
 
-    def dump_to_txt(self, a_output_dir):
-        self.filter_obj.dump_to_txt(a_output_dir=a_output_dir)
+    def dump_to_txt(self, a_output_dir, a_order_idx):
+        self.filter_obj.dump_to_txt(a_output_dir=a_output_dir, a_order_idx=a_order_idx)
 
 
 class Halfband_interpolate:
@@ -258,8 +259,24 @@ class Halfband_interpolate:
         return result[-1]
 
     def dump_to_txt(self, a_output_dir: str):
-        for interpolate_part in self.interpolate_chain:
-            interpolate_part.dump_to_txt(a_output_path=a_output_dir)
+        for i, interpolate_stage in enumerate(self.interpolate_chain):
+            interpolate_stage.dump_to_txt(a_output_dir=a_output_dir, a_order_idx=i)
+    
+    def generate_vhdl_package(self, a_jinja_path: str, a_output_path: str):
+        from jinja2 import Environment, FileSystemLoader
+
+        # Fetch idx that 1.0 is located at in the lower branch of each stage, which corresponds to the number of leading zeros in the lower branch
+        for stage in self.interpolate_chain:
+            stage.lower_delay_index = np.where(stage.filter_obj.taps_polyphase[1] == 1.0)[0][0] 
+
+        env = Environment(loader=FileSystemLoader(a_jinja_path))
+        template = env.get_template("halfband_interpolate_pkg.vhd.j2")
+        rendered_code = template.render(stages=self.interpolate_chain)
+
+        output_path = Path(a_output_path)
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            f.write(rendered_code)
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ def generate_coefficients_remez(
     a_fs: float,
     a_multirate_factor: int = None,
     a_plot: bool = True,
+    a_halfband_en: bool = False,
 ):
     """
     Use SciPy's implementation of the Parks-McClellan algorithm. Works for LPF and HPF.
@@ -114,13 +115,22 @@ def generate_coefficients_remez(
 
     # Create odd number of taps
     if a_multirate_factor is None:
-        while (nbr_of_taps + 1) % 4 != 0:
-            nbr_of_taps += 1
+        if a_halfband_en:
+            while (nbr_of_taps + 1) % 4 != 0:
+                nbr_of_taps += 1
+        else:
+            if nbr_of_taps % 2 == 0:
+                nbr_of_taps += 1
     else:
-        # If using multirate factor, keep existing logic but 
-        # ensure it doesn't violate the 4k-1 rule for half-bands
-        while nbr_of_taps % a_multirate_factor != 0 or (nbr_of_taps + 1) % 4 != 0:
-            nbr_of_taps += 1
+        if a_halfband_en:
+            # If using multirate factor, keep existing logic but 
+            # ensure it doesn't violate the 4k-1 rule for half-bands
+            while nbr_of_taps % a_multirate_factor != 0 or (nbr_of_taps + 1) % 4 != 0:
+                print(a_multirate_factor, nbr_of_taps)
+                nbr_of_taps += 1
+        else:
+            while nbr_of_taps % a_multirate_factor != 0:
+                nbr_of_taps += 1
 
     # Remez Exchange algorithm (parks-mcclellan)
     taps = remez(
@@ -158,6 +168,7 @@ def generate_coefficients_firwin(
     a_fs: float,
     a_multirate_factor: int = None,
     a_plot: bool = True,
+    a_halfband_en: bool = False,
 ):
     """
     Use SciPy's implementation of the Window method.
@@ -209,13 +220,21 @@ def generate_coefficients_firwin(
 
     # Create odd number of taps
     if a_multirate_factor is None:
-        while (nbr_of_taps + 1) % 4 != 0:
-            nbr_of_taps += 1
+        if a_halfband_en:
+            while (nbr_of_taps + 1) % 4 != 0:
+                nbr_of_taps += 1
+        else:
+            if nbr_of_taps % 2 == 0:
+                nbr_of_taps += 1
     else:
-        # If using multirate factor, keep existing logic but 
-        # ensure it doesn't violate the 4k-1 rule for half-bands
-        while nbr_of_taps % a_multirate_factor != 0 or (nbr_of_taps + 1) % 4 != 0:
-            nbr_of_taps += 1
+        if a_halfband_en:
+            # If using multirate factor, keep existing logic but 
+            # ensure it doesn't violate the 4k-1 rule for half-bands
+            while nbr_of_taps % a_multirate_factor != 0 or (nbr_of_taps + 1) % 4 != 0:
+                nbr_of_taps += 1
+        else:
+            while nbr_of_taps % a_multirate_factor != 0:
+                nbr_of_taps += 1
 
     # FIR Window algorithm (use 'hamming' by default)
     taps = firwin(

@@ -1,0 +1,27 @@
+{# Template for the CORDIC Microcode Package #}
+--================================================================================================
+-- Generated via Jinja2 Template through ../scripts/synth_and_test/halfband_filter.py
+--================================================================================================
+library ieee;
+use ieee.std_logic_1164.all;
+
+package halfband_filter_pkg is
+
+    -- Unique Filter Orders (N) for each stage
+    constant C_NUM_STAGES : natural := {{ stages|length }};
+    type t_halfband_tap_number is array (0 to C_NUM_STAGES - 1) of integer;
+    constant C_NUM_TAPS_UPPER : t_halfband_tap_number := (
+    {%- for stage in stages %}
+        {{ "%-4d"|format(stage.filter_obj.taps_polyphase[0]|length) }}{{ "," if not loop.last }} -- Stage {{ loop.index0 }}
+    {%- endfor %}
+    );
+
+    -- The index of the center tap (1.0) in the lower branch 
+    -- This represents the number of delay registers before the '1'
+    constant C_NUM_TAPS_LOWER : t_halfband_tap_number := (
+    {%- for stage in stages %}
+        {{ "%-4d"|format(stage.lower_delay_index) }}{{ "," if not loop.last }} -- Stage {{ loop.index0 }}
+    {%- endfor %}
+    );
+
+end package;

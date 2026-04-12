@@ -23,12 +23,12 @@ use ieee.math_real.all;
 use std.textio.all;
 -- 
 use work.polyphase_pkg.all;
+use work.halfband_filter_pkg.all;
 -- 
 entity halfband_interpolate_sequential is
     generic (
         G_DATA_WIDTH       : natural := 16;
         G_COEFF_WIDTH      : natural := 16;
-        G_FILTER_ORDER     : natural := 16;
         G_MULTIRATE_FACTOR : natural := 4;
         G_INIT_FILE        : string
     );
@@ -52,9 +52,10 @@ architecture rtl of halfband_interpolate_sequential is
     --------------------
     -- Signals
     --------------------
-    signal r_stage_data  : t_array_slv(0 to C_NUM_STAGES)(G_DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
-    signal r_stage_valid : std_logic_vector(C_NUM_STAGES downto 0)                   := (others => '0');
-    signal r_ready_out   : std_logic                                                 := '0';
+    signal r_stage_data     : t_array_slv(0 to C_NUM_STAGES)(G_DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+    signal r_stage_valid    : std_logic_vector(C_NUM_STAGES downto 0)                   := (others => '0');
+    signal r_stage_valid_d1 : std_logic                                                 := '0';
+    signal r_ready_out      : std_logic                                                 := '1';
 begin
     -- ================================================================
     -- Combinatorial
@@ -62,21 +63,64 @@ begin
     o_valid          <= r_stage_valid(r_stage_valid'high);
     o_ready          <= r_ready_out;
     r_stage_data(0)  <= i_data;
-    r_stage_valid(0) <= i_valid and (r_ready_out or r_stage_valid(r_stage_valid'high));
+    r_stage_valid(0) <= i_valid and r_ready_out;
     -- ================================================================
-    process (clk)
-    begin
-        if rising_edge(clk) then
-            if (i_valid = '1') then
-                r_ready_out <= '0';
+    ----------------------------------------------------
+    -- A . Multi-stage ready output generation
+    g_ready_output_multi_stage_A : if C_NUM_STAGES > 1 and C_NUM_STAGES < 5 generate
+        p_ready_output : process (clk)
+        begin
+            if rising_edge(clk) then
+                if (i_valid = '1') then
+                    r_ready_out <= '0';
+                end if;
+                r_stage_valid_d1 <= r_stage_valid(C_NUM_STAGES - 2);
+                if (r_stage_valid(C_NUM_STAGES - 2) = '1') and r_stage_valid_d1 = '0' then
+                    r_ready_out <= '1';
+                end if;
             end if;
-            if (r_stage_valid(r_stage_valid'high) = '1') then
-                r_ready_out <= '1';
+        end process p_ready_output;
+    end generate;
+    -- B . Multi-stage ready output generation
+    g_ready_output_multi_stage_B : if C_NUM_STAGES >= 5 generate
+        p_ready_output : process (clk)
+        begin
+            if rising_edge(clk) then
+                if (i_valid = '1') then
+                    r_ready_out <= '0';
+                end if;
+                r_stage_valid_d1 <= r_stage_valid(C_NUM_STAGES);
+                if (r_stage_valid(C_NUM_STAGES) = '1') and r_stage_valid_d1 = '0' then
+                    r_ready_out <= '1';
+                end if;
             end if;
-        end if;
-    end process;
+        end process p_ready_output;
+    end generate;
+    ----------------------------------------------------
+    -- Single-stage ready output generation
+    g_ready_output_single_stage : if C_NUM_STAGES = 1 generate
+        p_ready_output : process (clk)
+        begin
+            if rising_edge(clk) then
+                if (i_valid = '1') then
+                    r_ready_out <= '0';
+                end if;
+                r_stage_valid_d1 <= r_stage_valid(1);
+                if (r_stage_valid(1) = '1') and r_stage_valid_d1 = '0' then
+                    r_ready_out <= '1';
+                end if;
+            end if;
+        end process p_ready_output;
+    end generate;
+    ----------------------------------------------------
+    -- Error generation for unsupported configurations
+    g_ready_output_error : if C_NUM_STAGES = 0 generate
+        assert FALSE report "No stages?!" severity FAILURE;
+    end generate;
+    ----------------------------------------------------
     -- ================================================================
     g_generate_interpolate_stage : for i in 0 to C_NUM_STAGES - 1 generate
+        constant C_INIT_FILE        : string := G_INIT_FILE & "_" & integer'image(i) & ".txt";
         signal w_stage_data_out     : t_array_slv(0 to 1)(G_DATA_WIDTH - 1 downto 0);
         signal w_stage_data_out_slv : std_logic_vector(2 * G_DATA_WIDTH - 1 downto 0);
         signal w_stage_valid_out    : std_logic;
@@ -87,10 +131,11 @@ begin
         ---------------------------------------------------
         halfband_interpolate_stage_inst : entity work.halfband_interpolate_stage
             generic map(
-                G_DATA_WIDTH   => G_DATA_WIDTH,
-                G_COEFF_WIDTH  => G_COEFF_WIDTH,
-                G_FILTER_ORDER => G_FILTER_ORDER,
-                G_INIT_FILE    => integer'image(i) & "_" & G_INIT_FILE
+                G_DATA_WIDTH     => G_DATA_WIDTH,
+                G_COEFF_WIDTH    => G_COEFF_WIDTH,
+                G_NUM_TAPS_UPPER => C_NUM_TAPS_UPPER(i),
+                G_NUM_TAPS_LOWER => C_NUM_TAPS_LOWER(i),
+                G_INIT_FILE      => C_INIT_FILE
             )
             port map
             (
@@ -106,7 +151,7 @@ begin
         sync_standard_fifo_inst : entity work.sync_standard_fifo
             generic map(
                 G_DATA_WIDTH => 2 * G_DATA_WIDTH,
-                G_DATA_DEPTH => (2 ** i) - 1
+                G_DATA_DEPTH => (2 ** i)
             )
             port map
             (

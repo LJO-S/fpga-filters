@@ -9,10 +9,11 @@ use work.polyphase_pkg.all;
 -- 
 entity halfband_interpolate_stage is
     generic (
-        G_DATA_WIDTH   : natural := 16;
-        G_COEFF_WIDTH  : natural := 16;
-        G_FILTER_ORDER : natural := 64;
-        G_INIT_FILE    : string  := "../../data/filter_coefficients/DUC4_16b_fpass13000_fstop27000_fs80000.txt"
+        G_DATA_WIDTH     : natural := 16;
+        G_COEFF_WIDTH    : natural := 16;
+        G_NUM_TAPS_UPPER : natural := 8;
+        G_NUM_TAPS_LOWER : natural := 2;
+        G_INIT_FILE      : string
     );
     port (
         clk : in std_logic;
@@ -29,11 +30,10 @@ architecture rtl of halfband_interpolate_stage is
     --------------------
     -- Constants
     --------------------
-    constant C_COEFF_FRAC_WIDTH    : natural                           := G_COEFF_WIDTH - 1;
-    constant C_NBR_OF_LOWER_DELAYS : natural                           := (G_FILTER_ORDER - 3) / 4;
-    constant C_BIT_GROWTH          : natural                           := integer(ceil(log2(real(G_FILTER_ORDER))));
-    constant C_CLIP_MAX_SIGNED     : signed(G_DATA_WIDTH - 1 downto 0) := (G_DATA_WIDTH - 1 => '0', others => '1');
-    constant C_CLIP_MIN_SIGNED     : signed(G_DATA_WIDTH - 1 downto 0) := (G_DATA_WIDTH - 1 => '1', others => '0');
+    constant C_COEFF_FRAC_WIDTH : natural                           := G_COEFF_WIDTH - 1;
+    constant C_BIT_GROWTH       : natural                           := integer(ceil(log2(real(G_NUM_TAPS_UPPER))));
+    constant C_CLIP_MAX_SIGNED  : signed(G_DATA_WIDTH - 1 downto 0) := (G_DATA_WIDTH - 1 => '0', others => '1');
+    constant C_CLIP_MIN_SIGNED  : signed(G_DATA_WIDTH - 1 downto 0) := (G_DATA_WIDTH - 1 => '1', others => '0');
     --------------------
     -- Functions
     --------------------
@@ -42,11 +42,11 @@ architecture rtl of halfband_interpolate_stage is
         file v_read_file : text open read_mode is G_INIT_FILE;
         variable v_line  : line;
         variable v_slv   : std_logic_vector(G_COEFF_WIDTH - 1 downto 0);
-        variable v_ram   : t_array_slv(0 to G_FILTER_ORDER - 1)(G_COEFF_WIDTH - 1 downto 0);
+        variable v_ram   : t_array_slv(0 to (G_NUM_TAPS_UPPER/2) - 1)(G_COEFF_WIDTH - 1 downto 0);
         variable v_idx   : natural := 0;
     begin
         v_idx := 0;
-        while not endfile(v_read_file) loop
+        for i in 0 to (G_NUM_TAPS_UPPER/2) - 1 loop
             readline(v_read_file, v_line);
             read(v_line, v_slv);
             v_ram(v_idx) := v_slv;
@@ -57,22 +57,22 @@ architecture rtl of halfband_interpolate_stage is
     --------------------
     -- Signals
     --------------------
-    signal coefficient_memory                       : t_array_slv(0 to (G_FILTER_ORDER/2) - 1)(G_COEFF_WIDTH - 1 downto 0)                                  := init_ram_from_file;
-    signal r_data                                   : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                           := (others => '0');
-    signal r_valid                                  : std_logic                                                                                             := '0';
-    signal r_delay_line_upper                       : t_array_slv(0 to G_FILTER_ORDER - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)        := (others => (others => '0'));
-    signal r_delay_line_lower                       : t_array_slv(0 to C_NBR_OF_LOWER_DELAYS - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
-    signal r_data_lower                             : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                           := (others => '0');
-    signal r_data_lower_d1, r_data_lower_d2         : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                           := (others => '0');
-    signal r_dlyline_valid                          : std_logic                                                                                             := '0';
-    signal r_acc                                    : std_logic_vector(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                            := (others => '0');
-    signal r_acc_shifted                            : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                          := (others => '0');
-    signal r_postproc_valid                         : std_logic                                                                                             := '0';
-    signal r_postproc_valid_d1, r_postproc_valid_d2 : std_logic                                                                                             := '0';
-    signal r_acc_clip                               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                           := (others => '0');
+    signal coefficient_memory                       : t_array_slv(0 to (G_NUM_TAPS_UPPER/2) - 1)(G_COEFF_WIDTH - 1 downto 0)                           := init_ram_from_file;
+    signal r_data                                   : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_valid                                  : std_logic                                                                                        := '0';
+    signal r_delay_line_upper                       : t_array_slv(0 to G_NUM_TAPS_UPPER - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
+    signal r_delay_line_lower                       : t_array_slv(0 to G_NUM_TAPS_LOWER)(G_DATA_WIDTH - 1 downto 0)                                    := (others => (others => '0'));
+    signal r_data_lower                             : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_data_lower_d1, r_data_lower_d2         : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_dlyline_valid                          : std_logic                                                                                        := '0';
+    signal r_acc                                    : std_logic_vector(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                       := (others => '0');
+    signal r_acc_shifted                            : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                     := (others => '0');
+    signal r_postproc_valid                         : std_logic                                                                                        := '0';
+    signal r_postproc_valid_d1, r_postproc_valid_d2 : std_logic                                                                                        := '0';
+    signal r_acc_clip                               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
 begin
     -- ================================================================
-    -- Combinatorial
+    -- Combinatorial r_data_lower_d2
     o_data(0) <= r_acc_clip;
     o_data(1) <= r_data_lower_d2;
     o_valid   <= r_postproc_valid_d2;
@@ -96,7 +96,7 @@ begin
                 -- MAC & Delay Line
                 ------------------
                 -- UPPER
-                for tap in 0 to (G_FILTER_ORDER/2) - 1 loop
+                for tap in 0 to (G_NUM_TAPS_UPPER/2) - 1 loop
                     -- Multiply
                     v_result := signed(coefficient_memory(tap)) * signed(r_data);
                     -- Accumulate delay line
@@ -105,7 +105,7 @@ begin
                         r_delay_line_upper(r_delay_line_upper'high) <= std_logic_vector(resize(signed(r_delay_line_upper(r_delay_line_upper'high - 1)) + v_result, r_delay_line_upper(0)'length));
                     else
                         r_delay_line_upper(tap)                           <= std_logic_vector(resize(signed(r_delay_line_upper(tap - 1)) + v_result, r_delay_line_upper(0)'length));
-                        r_delay_line_upper(r_delay_line_upper'high - tap) <= std_logic_vector(resize(signed(r_delay_line_upper(tap - 1)) + v_result, r_delay_line_upper(0)'length));
+                        r_delay_line_upper(r_delay_line_upper'high - tap) <= std_logic_vector(resize(signed(r_delay_line_upper(r_delay_line_upper'high - tap - 1)) + v_result, r_delay_line_upper(0)'length));
                     end if;
                 end loop;
                 -- LOWER
