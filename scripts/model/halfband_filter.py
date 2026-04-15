@@ -2,7 +2,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 from collections import deque
 from pathlib import Path
-from bitstring import BitArray
 
 
 from scripts.synth_and_test.generate_filter_coefficients import (
@@ -61,7 +60,6 @@ class Halfband_filter:
         # The nbr of taps are odd, but the code below re-uses a interpolate-by-2 structure
         if len(self.taps_prototype) % 2 != 0:
             self.taps_prototype = np.append(self.taps_prototype, 0.0)
-        print(self.taps_prototype)
 
         # Generate Polyphase structure
         self.taps_polyphase = np.zeros((2, len(self.taps_prototype) // 2))
@@ -69,8 +67,6 @@ class Halfband_filter:
             # Create polyphase matrix
             self.taps_polyphase[i % 2][i // 2] = coeff
 
-        print(len(self.taps_polyphase[0]))
-        print(self.taps_polyphase)
         self.shift_register = [
             deque([0.0] * self.taps_polyphase.shape[1]) for _ in range(2)
         ]
@@ -167,9 +163,7 @@ class Halfband_decimate_part:
             a_atten_db=a_atten_db,
             a_fs=a_fs,
         )
-        self.input_register = [
-            deque([0.0] * self.taps_polyphase.shape[1]) for _ in range(2)
-        ]
+        self.input_register = deque([0.0] * self.filter_obj.taps_polyphase.shape[1])
 
     def tick(self, a_new_sample):
         # Push new sample into input delay line
@@ -187,7 +181,7 @@ class Halfband_decimate_part:
                 self.filter_obj.shift_register[phase].pop()
                 # Accumulate the "Multiply-and-Accumulate"
                 result += np.dot(
-                    self.filter_obj.taps_polyphase[phase], self.shift_register[phase]
+                    self.filter_obj.taps_polyphase[phase], self.filter_obj.shift_register[phase]
                 )
             # Increment decimate counter
             return result
@@ -225,11 +219,6 @@ class Halfband_interpolate:
             fs_new *= 2
             fpass = fs_new / 4 - (delta / 2)
             fstop = fs_new / 4 + (delta / 2)
-            print("idx ",i)
-            print("delta ", delta)
-            print("fsnew ", fs_new)
-            print("fpass ", fpass)
-            print("fstop ", fstop)
             # Append to the chain of interpolate-by-2
             self.interpolate_chain.append(
                 Halfband_interpolate_part(
@@ -278,6 +267,88 @@ class Halfband_interpolate:
         with open(output_path, "w") as f:
             f.write(rendered_code)
 
+class Halfband_decimate:
+    def __init__(
+        self,
+        a_fpass: float,
+        a_atten_db: float,
+        a_fs: int,
+        a_multirate_factor: int,
+        a_data_width: int = 16,
+    ):
+        # Characteristics
+        self.fpass = a_fpass
+        self.atten_db = a_atten_db
+        self.fs = a_fs
+        self.multirate_factor = a_multirate_factor
+        self.data_width = a_data_width
+
+        assert a_multirate_factor % 2 == 0, f"L={a_multirate_factor} is NOT a pow-of-2"
+
+        self.decimate_chain = list()
+
+        fs_new = a_fs
+        for i in range(int(np.ceil(np.log2(a_multirate_factor)))):
+            delta = (
+                fs_new / 2 - a_fpass
+            ) * 2  # this might look complex but is actually pretty intuitive if you draw it
+            fs_new /= 2
+            fpass = fs_new / 4 - (delta / 2)
+            fstop = fs_new / 4 + (delta / 2)
+            print("idx ",i)
+            print("delta ", delta)
+            print("fsnew ", fs_new)
+            print("fpass ", fpass)
+            print("fstop ", fstop)
+            # Append to the chain of interpolate-by-2
+            self.decimate_chain.append(
+                Halfband_decimate_part(
+                    a_fpass=fpass,
+                    a_fstop=fstop,
+                    a_atten_db=a_atten_db,
+                    a_fs=fs_new,
+                    a_data_width=a_data_width,
+                )
+            )
+
+    def tick(self, a_new_sample):
+        # Depth of chain
+        num_stages = int(np.ceil(np.log2(self.multirate_factor)))
+        result = [None for _ in range(num_stages)]
+
+        # Stage 0: first interpolation
+        result[0] = self.decimate_chain[0].tick(a_new_sample=a_new_sample)
+
+        # Stages 1 to N: chained interpolation
+        for m_idx in range(1, num_stages):
+            prev_stage_samples = result[m_idx - 1]
+            if prev_stage_samples is None:
+                result[m_idx] = None
+                continue
+            curr_stage_output = self.decimate_chain[m_idx].tick(a_new_sample=prev_stage_samples)
+            result[m_idx] = curr_stage_output
+        return result[-1]
+
+    def dump_to_txt(self, a_output_dir: str):
+        for i, decimate_stage in enumerate(self.decimate_chain):
+            decimate_stage.dump_to_txt(a_output_dir=a_output_dir, a_order_idx=i)
+    
+    def generate_vhdl_package(self, a_jinja_path: str, a_output_path: str):
+        from jinja2 import Environment, FileSystemLoader
+
+        # Fetch idx that 0.5 is located at in the lower branch of each stage, which corresponds to the number of leading zeros in the lower branch
+        for stage in self.decimate_chain:
+            stage.lower_delay_index = np.where(stage.filter_obj.taps_polyphase[1] == 0.5)[0][0] 
+
+        env = Environment(loader=FileSystemLoader(a_jinja_path))
+        template = env.get_template("halfband_decimate_pkg.vhd.j2")
+        rendered_code = template.render(stages=self.decimate_chain)
+
+        output_path = Path(a_output_path)
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            f.write(rendered_code)
+
 
 if __name__ == "__main__":
     # ================================
@@ -285,11 +356,12 @@ if __name__ == "__main__":
     INTERPOLATE = False
     # ================================
     # PARAMETERS
-    FS = 48.8e3
+    FS = 468.8e3
     INPUT_FREQ = 0.1 * FS
     FPASS = 0.2 * FS
     ATTEN_DB = 60
     L = 16
+    M = 8
     # ================================
     # A. Generate 1/10 FS sine
     N = 1024
@@ -297,17 +369,30 @@ if __name__ == "__main__":
     input_data = np.sin(2 * np.pi * (INPUT_FREQ) * t)
 
     # B. Create Polyphase filter
-    filter_obj = Halfband_interpolate(
-        a_fpass=FPASS,
-        a_atten_db=ATTEN_DB,
-        a_fs=FS,
-        a_multirate_factor=L,
-    )
+    if INTERPOLATE:
+        filter_obj = Halfband_interpolate(
+            a_fpass=FPASS,
+            a_atten_db=ATTEN_DB,
+            a_fs=FS,
+            a_multirate_factor=L,
+        )
+    else:
+        filter_obj = Halfband_decimate(
+            a_fpass=FPASS,
+            a_atten_db=ATTEN_DB,
+            a_fs=FS,
+            a_multirate_factor=M,
+        )
+
     result = list()
     for input in input_data:
         output = filter_obj.tick(a_new_sample=input)
-        for res in output:
-            result.append(res)
+        if INTERPOLATE:
+            for res in output:
+                result.append(res)
+        else:
+            if output is not None:
+                result.append(output)
     fig = plt.figure()
     # ----------------------------------------------------------
     ax1 = fig.add_subplot(221)
@@ -327,8 +412,12 @@ if __name__ == "__main__":
     ax3.set_ylim(-10, 100)
     ax3.grid(True)
     # ----------------------------------------------------------
-    new_fs = FS * L
-    t = np.arange(N * L) * (1 / new_fs)
+    if INTERPOLATE:
+        new_fs = FS * L
+        t = np.arange(N * L) * (1 / new_fs)
+    else:
+        new_fs = FS / M
+        t = np.arange(N // M) * (1 / new_fs)
     x_axis_freq = np.fft.rfftfreq(len(t), 1 / new_fs)
     fft_output = np.fft.rfft(result)
     magnitude = np.maximum(np.abs(fft_output), 1e-12)

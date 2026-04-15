@@ -1,18 +1,11 @@
+{# Template for the CORDIC Microcode Package #}
 --================================================================================================
-{# Jinja2 template for the halfband interpolator VHDL package.
-   The generated output file (src/halfband/halfband_interpolate_pkg.vhd) must NOT be edited
-   by hand — it is regenerated each time the VUnit test runner is invoked:
-       cd test && python run.py
-   The generation is triggered inside Halfband_interpolate.generate_vhdl_package()
-   (scripts/model/halfband_filter.py), called from test/run.py before the simulation runs. #}
--- AUTO-GENERATED FILE — do not edit by hand.
--- Regenerate by running:  cd test && python run.py
--- Source template: scripts/synth_and_test/jinja/halfband_interpolate_pkg.vhd.j2
+-- Generated via Jinja2 Template through ../scripts/synth_and_test/halfband_filter.py
 --================================================================================================
 library ieee;
 use ieee.std_logic_1164.all;
 
-package halfband_interpolate_filter_pkg is
+package halfband_decimate_filter_pkg is
 
     -- Unique Filter Orders (N) for each stage
     constant C_NUM_STAGES : natural := {{ stages|length }};
