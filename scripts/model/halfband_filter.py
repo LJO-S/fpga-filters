@@ -288,28 +288,30 @@ class Halfband_decimate:
         self.decimate_chain = list()
 
         fs_new = a_fs
+        fpass = a_fpass
         for i in range(int(np.ceil(np.log2(a_multirate_factor)))):
-            delta = (
-                fs_new / 2 - a_fpass
-            ) * 2  # this might look complex but is actually pretty intuitive if you draw it
-            fs_new /= 2
-            fpass = fs_new / 4 - (delta / 2)
-            fstop = fs_new / 4 + (delta / 2)
+            # Centers the transition band around fs_new/4 (intuitive if you draw it out)
+            # The width of the transition band is halved at each stage, which results in the stopband edge being at fs_new/2 - fpass
+            fstop = fs_new / 2 - a_fpass 
+            if fstop <= fpass:
+                raise ValueError(
+                    f"Invalid filter design! Stopband edge is negative or equals fpass. fs={fs_new}, fstop={fstop}, fpass={fpass}"
+                )
             print("idx ",i)
-            print("delta ", delta)
             print("fsnew ", fs_new)
             print("fpass ", fpass)
             print("fstop ", fstop)
-            # Append to the chain of interpolate-by-2
+            # Append to the chain of decimate-by-2
             self.decimate_chain.append(
                 Halfband_decimate_part(
-                    a_fpass=fpass,
+                    a_fpass=a_fpass,
                     a_fstop=fstop,
                     a_atten_db=a_atten_db,
                     a_fs=fs_new,
                     a_data_width=a_data_width,
                 )
             )
+            fs_new /= 2
 
     def tick(self, a_new_sample):
         # Depth of chain
@@ -357,8 +359,8 @@ if __name__ == "__main__":
     # ================================
     # PARAMETERS
     FS = 468.8e3
-    INPUT_FREQ = 0.1 * FS
-    FPASS = 0.2 * FS
+    INPUT_FREQ = 0.01 * FS
+    FPASS = INPUT_FREQ + 0.05 * FS
     ATTEN_DB = 60
     L = 16
     M = 8
