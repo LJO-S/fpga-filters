@@ -66,7 +66,10 @@ class Halfband_filter:
         for i, coeff in enumerate(self.taps_prototype):
             # Create polyphase matrix
             self.taps_polyphase[i % 2][i // 2] = coeff
-            
+
+        # Force 0.5 where close to 0.5 in the lower branch
+        self.taps_polyphase[1][(self.taps_polyphase[1] >= 0.499) & (self.taps_polyphase[1] < 0.501)] = 0.5
+
         self.shift_register = [
             deque([0.0] * self.taps_polyphase.shape[1]) for _ in range(2)
         ]

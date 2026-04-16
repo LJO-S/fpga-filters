@@ -23,7 +23,7 @@ use ieee.math_real.all;
 use std.textio.all;
 -- 
 use work.polyphase_pkg.all;
-use work.halfband_interpolate_filter_pkg.all;
+use work.halfband_decimate_filter_pkg.all;
 -- 
 entity halfband_decimate is
     generic (

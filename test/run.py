@@ -11,9 +11,9 @@ import os
 
 sys.path.append("../")
 from scripts.model.polyphase_filter import Polyphase_interpolate, Polyphase_decimate
-from scripts.model.halfband_filter import Halfband_interpolate
+from scripts.model.halfband_filter import Halfband_interpolate, Halfband_decimate
 from scripts.synth_and_test.polyphase_filter import polyphase_intepolate_checker, polyphase_decimate_checker
-from scripts.synth_and_test.halfband_filter import halfband_intepolate_checker
+from scripts.synth_and_test.halfband_filter import halfband_intepolate_checker, halfband_decimate_checker
 
 
 # ============================================================
@@ -317,7 +317,7 @@ cfg = dict(
 )
 
 # Generate taps etc
-halfband_obj = Halfband_interpolate(
+halfband_interpolate_obj = Halfband_interpolate(
     a_fpass=cfg["fpass"],
     a_atten_db=cfg["atten_db"],
     a_fs=cfg["fs"],
@@ -325,9 +325,9 @@ halfband_obj = Halfband_interpolate(
     a_data_width=cfg["G_COEFF_WIDTH"],
 )
 # Generate package file for synthesis
-halfband_obj.generate_vhdl_package(a_jinja_path="../scripts/synth_and_test/jinja", a_output_path="../src/halfband/interpolate/halfband_interpolate_pkg.vhd")
+halfband_interpolate_obj.generate_vhdl_package(a_jinja_path="../scripts/synth_and_test/jinja", a_output_path="../src/halfband/interpolate/halfband_interpolate_pkg.vhd")
 
-halfband_checker_obj = halfband_intepolate_checker(a_halfband_object=halfband_obj)
+halfband_checker_obj = halfband_intepolate_checker(a_halfband_object=halfband_interpolate_obj)
 
 test.add_config(
     name=f'L={cfg["multirate_factor"]}_FS={int(cfg["fs"])}',
@@ -343,7 +343,60 @@ test.add_config(
     post_check=halfband_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )
 
-# And another testbench etc.
+# -----------------------------------------------------------------------
+# Halfband Decimate
+# Sequential
+# -----------------------------------------------------------------------
+testbench = lib.entity("halfband_decimate_tb")
+test = testbench.test("auto")
+
+# Configuration
+G_DATA_WIDTH = 16
+M = 2
+FS = 48.8e3 * M
+FPASS = 13.2e3
+
+cfg = dict(
+    input_frequency=0.8 * FPASS,
+    fpass=FPASS,
+    atten_db=60,
+    fs=FS,
+    multirate_factor=M,
+    G_DATA_WIDTH=G_DATA_WIDTH,
+    G_DATA_WIDTH_FRAC=G_DATA_WIDTH - 2,
+    G_COEFF_WIDTH=G_DATA_WIDTH,
+)
+
+# Generate taps etc
+halfband_decimate_obj = Halfband_decimate(
+    a_fpass=cfg["fpass"],
+    a_atten_db=cfg["atten_db"],
+    a_fs=cfg["fs"],
+    a_multirate_factor=cfg["multirate_factor"],
+    a_data_width=cfg["G_COEFF_WIDTH"],
+)
+
+# Generate VHDL package for synthesis
+halfband_decimate_obj.generate_vhdl_package(
+    a_jinja_path="../scripts/synth_and_test/jinja",
+    a_output_path="../src/halfband/decimate/halfband_decimate_pkg.vhd"
+)
+
+halfband_checker_obj = halfband_decimate_checker(a_halfband_object=halfband_decimate_obj)
+
+test.add_config(
+    name=f'M={cfg["multirate_factor"]}_FS={int(cfg["fs"])}',
+    generics=dict(
+        G_DATA_WIDTH=cfg["G_DATA_WIDTH"],
+        G_COEFF_WIDTH=cfg["G_COEFF_WIDTH"],
+        G_MULTIRATE_FACTOR=cfg["multirate_factor"],
+        G_INIT_FILE=f'HBF_{cfg["G_COEFF_WIDTH"]}',
+    ),
+    pre_config=halfband_checker_obj.pre_config_wrapper(
+        a_input_samples=256*16, a_cfg=cfg),
+    post_check=halfband_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
+)
+
 # ============================================================
 VU.add_compile_option("modelsim.vcom_flags", ["+acc=npr", '+cover="sbcef'])
 # ============================================================

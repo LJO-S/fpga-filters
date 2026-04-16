@@ -16,7 +16,7 @@ package halfband_decimate_filter_pkg is
     {%- endfor %}
     );
 
-    -- The index of the center tap (1.0) in the lower branch 
+    -- The index of the center tap (0.5) in the lower branch 
     -- This represents the number of delay registers before the '1'
     constant C_NUM_TAPS_LOWER : t_halfband_tap_number := (
     {%- for stage in stages %}

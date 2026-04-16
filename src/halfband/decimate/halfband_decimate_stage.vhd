@@ -58,13 +58,16 @@ architecture rtl of halfband_decimate_stage is
     -- Signals
     --------------------
     signal coefficient_memory                       : t_array_slv(0 to (G_NUM_TAPS_UPPER/2) - 1)(G_COEFF_WIDTH - 1 downto 0)                           := init_ram_from_file;
-    signal r_data                                   : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_data_upper                             : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_data_lower                             : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_sel                                    : std_logic                                                                                        := '0';
     signal r_valid                                  : std_logic                                                                                        := '0';
     signal r_delay_line_upper                       : t_array_slv(0 to G_NUM_TAPS_UPPER - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
     signal r_delay_line_lower                       : t_array_slv(0 to G_NUM_TAPS_LOWER)(G_DATA_WIDTH - 1 downto 0)                                    := (others => (others => '0'));
     signal r_dlyline_valid                          : std_logic                                                                                        := '0';
-    signal r_acc                                    : std_logic_vector(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH downto 0)                           := (others => '0');
-    signal r_acc_shifted                            : signed(G_DATA_WIDTH + C_BIT_GROWTH + 1 downto 0)                                                     := (others => '0');
+    signal r_acc_upper                              : std_logic_vector(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0)                       := (others => '0');
+    signal r_acc_lower                              : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
+    signal r_acc_shifted                            : signed(G_DATA_WIDTH + C_BIT_GROWTH downto 0)                                                     := (others => '0');
     signal r_postproc_valid                         : std_logic                                                                                        := '0';
     signal r_postproc_valid_d1, r_postproc_valid_d2 : std_logic                                                                                        := '0';
     signal r_acc_clip                               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                      := (others => '0');
@@ -77,9 +80,17 @@ begin
     p_register_input : process (clk)
     begin
         if rising_edge(clk) then
-            -- Pipe to ease timing
-            r_data  <= i_data;
-            r_valid <= i_valid;
+            r_valid <= '0';
+            if (i_valid = '1') then
+                r_sel <= not(r_sel);
+                -- Valid is high every other sample to implement decimation by 2
+                if (r_sel = '1') then
+                    r_data_upper <= i_data;
+                    r_valid      <= '1';
+                else
+                    r_data_lower <= i_data;
+                end if;
+            end if;
         end if;
     end process p_register_input;
     -- ================================================================
@@ -95,7 +106,7 @@ begin
                 -- UPPER
                 for tap in 0 to (G_NUM_TAPS_UPPER/2) - 1 loop
                     -- Multiply
-                    v_result := signed(coefficient_memory(tap)) * signed(r_data);
+                    v_result := signed(coefficient_memory(tap)) * signed(r_data_upper);
                     -- Accumulate delay line
                     if (tap = 0) then
                         r_delay_line_upper(tap)                     <= std_logic_vector(resize(v_result, r_delay_line_upper(0)'length));
@@ -106,30 +117,31 @@ begin
                     end if;
                 end loop;
                 -- LOWER
-                r_delay_line_lower <= r_data & r_delay_line_lower(r_delay_line_lower'low to r_delay_line_lower'high - 1);
+                r_delay_line_lower <= r_data_lower & r_delay_line_lower(r_delay_line_lower'low to r_delay_line_lower'high - 1);
             end if;
             r_dlyline_valid <= r_valid;
         end if;
     end process p_mac_and_delay_line_upper;
     -- ================================================================
     p_saturate_and_ovf : process (clk)
-        variable v_term_upper : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH downto 0) := (others => '0');
-        variable v_term_lower : signed(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH downto 0) := (others => '0');
     begin
         if rising_edge(clk) then
             ------------------
             -- PIPE 0
             -- Fetch value
             ------------------
-            v_term_upper := resize(signed(r_delay_line_upper(r_delay_line_upper'high)), v_term_upper'length);
-            v_term_lower := resize(signed(r_delay_line_lower(r_delay_line_lower'high)), v_term_lower'length);
-            r_acc            <= std_logic_vector(v_term_upper + shift_right(v_term_lower, 1)); -- Shift right by 1 implements the implicit 0.5 coefficient for the lower branch
+            r_acc_upper      <= r_delay_line_upper(r_delay_line_upper'high);
+            r_acc_lower      <= r_delay_line_lower(r_delay_line_lower'high);
             r_postproc_valid <= r_dlyline_valid;
             ------------------
             -- PIPE 1
-            -- Scale
+            -- Add & Scale
             ------------------
-            r_acc_shifted       <= resize(shift_right(signed(r_acc), C_COEFF_FRAC_WIDTH), r_acc_shifted'length);
+            -- Shift right by 1 implements the implicit 0.5 coefficient for the lower branch
+            r_acc_shifted <= resize(
+                shift_right(signed(r_acc_upper), C_COEFF_FRAC_WIDTH) + shift_right(signed(r_acc_lower), 1),
+                r_acc_shifted'length
+                );
             r_postproc_valid_d1 <= r_postproc_valid;
             ------------------
             -- PIPE 2
