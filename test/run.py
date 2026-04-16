@@ -325,7 +325,7 @@ halfband_obj = Halfband_interpolate(
     a_data_width=cfg["G_COEFF_WIDTH"],
 )
 # Generate package file for synthesis
-halfband_obj.generate_vhdl_package(a_jinja_path="../scripts/synth_and_test/jinja", a_output_path="../src/halfband/halfband_interpolate_pkg.vhd")
+halfband_obj.generate_vhdl_package(a_jinja_path="../scripts/synth_and_test/jinja", a_output_path="../src/halfband/interpolate/halfband_interpolate_pkg.vhd")
 
 halfband_checker_obj = halfband_intepolate_checker(a_halfband_object=halfband_obj)
 

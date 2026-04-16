@@ -66,7 +66,7 @@ class Halfband_filter:
         for i, coeff in enumerate(self.taps_prototype):
             # Create polyphase matrix
             self.taps_polyphase[i % 2][i // 2] = coeff
-
+            
         self.shift_register = [
             deque([0.0] * self.taps_polyphase.shape[1]) for _ in range(2)
         ]
