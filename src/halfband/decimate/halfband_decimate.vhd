@@ -29,8 +29,8 @@ entity halfband_decimate is
     generic (
         G_DATA_WIDTH       : natural := 16;
         G_COEFF_WIDTH      : natural := 16;
-        G_MULTIRATE_FACTOR : natural := 4;
-        G_INIT_FILE        : string
+        G_MULTIRATE_FACTOR : natural := 32;
+        G_INIT_FILE        : string  := "/mnt/tools/projects/fpga/fpga-filters/test/vunit_out/test_output/lib.halfband_decimate_tb.M=32_FS=1561600.auto_649f120d6b40a36571b77cf16bc9fb35313717ef/HBF_16"
     );
     port (
         clk : in std_logic;
@@ -66,7 +66,7 @@ begin
         assert FALSE report "No stages?!" severity FAILURE;
     end generate;
     -- ================================================================
-    g_generate_interpolate_stage : for i in 0 to C_NUM_STAGES - 1 generate
+    g_generate_decimate_stage : for i in 0 to C_NUM_STAGES - 1 generate
         constant C_INIT_FILE        : string := G_INIT_FILE & "_" & integer'image(i) & ".txt";
         signal w_stage_data_out     : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
         signal w_stage_valid_out    : std_logic;
