@@ -10,7 +10,25 @@ set open_gui_opt      [lindex $argv 4]
 create_project -force $project_name ${project_dir}/${project_name}
 # =====================================================================
 # Add all VHDL files from the source directory
-set vhdl_files [glob -nocomplain "$src_dir/**/*.vhd"]
+
+# Define a recursive search procedure
+proc find_files {dir pattern} {
+    # 1. Find files in the current directory that match the pattern
+    set files [glob -nocomplain -directory $dir $pattern]
+
+    # 2. Find all subdirectories in the current directory
+    set subdirs [glob -nocomplain -directory $dir -type d *]
+
+    # 3. Loop through subdirectories and call this procedure recursively
+    foreach subdir $subdirs {
+        set files [concat $files [find_files $subdir $pattern]]
+    }
+    
+    return $files
+}
+
+set vhdl_files [find_files $src_dir "*.vhd"]
+
 if {[llength $vhdl_files] > 0} {
     add_files -norecurse $vhdl_files
     set_property FILE_TYPE "VHDL 2008" [get_files $vhdl_files]

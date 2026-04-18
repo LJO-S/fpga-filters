@@ -300,10 +300,6 @@ class Halfband_decimate:
                 raise ValueError(
                     f"Invalid filter design! Stopband edge is negative or equals fpass. fs={fs_new}, fstop={fstop}, fpass={fpass}"
                 )
-            print("idx ",i)
-            print("fsnew ", fs_new)
-            print("fpass ", fpass)
-            print("fstop ", fstop)
             # Append to the chain of decimate-by-2
             self.decimate_chain.append(
                 Halfband_decimate_part(
