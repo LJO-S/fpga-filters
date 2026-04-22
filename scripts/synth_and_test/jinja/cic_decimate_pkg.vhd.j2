@@ -1,0 +1,40 @@
+{# Jinja2 template for the CIC decimator VHDL package.
+   The generated output file (src/cic/decimate/cic_decimate_pkg.vhd) must NOT be edited
+   by hand — it is regenerated each time the VUnit test runner is invoked:
+       cd test && python run.py
+   The generation is triggered inside cic_decimate.generate_vhdl_package()
+   (scripts/model/cic_filter.py), called from test/run.py before the simulation runs. #}
+--================================================================================================
+-- AUTO-GENERATED FILE — do not edit by hand.
+-- Regenerate by running:  cd test && python run.py
+-- Source template: scripts/synth_and_test/jinja/cic_decimate_pkg.vhd.j2
+--================================================================================================
+library ieee;
+use ieee.std_logic_1164.all;
+
+package cic_decimate_pkg is
+
+    -- CIC filter order (number of integrator/comb stages)
+    constant C_CIC_ORDER        : natural := {{ cic_order }};
+
+    -- FIR compensation filter dimensions
+    -- C_NUM_TAPS is the total (full) tap count; the folded implementation stores C_NUM_TAPS/2 entries
+    constant C_NUM_TAPS         : natural := {{ num_taps }};
+
+    -- Coefficient fixed-point format
+    -- Value = integer(bin) / 2^C_COEFF_FRAC_WIDTH
+    -- Integer bits above the sign bit = C_COEFF_WIDTH - C_COEFF_FRAC_WIDTH - 1
+    constant C_COEFF_WIDTH      : natural := {{ coeff_width }};
+    constant C_COEFF_FRAC_WIDTH : natural := {{ coeff_frac_width }};
+
+    -- First half of the symmetric FIR compensation coefficients (two's-complement binary).
+    -- Coefficients are in Q({{ coeff_width - coeff_frac_width - 1 }}.{{ coeff_frac_width }}) signed fixed-point format.
+    -- Index 0 is the outermost tap; the folded FIR mirrors these onto both halves of the delay line.
+    type t_comp_coeff_array is array (0 to C_NUM_TAPS / 2 - 1) of std_logic_vector(C_COEFF_WIDTH - 1 downto 0);
+    constant C_FIR_FILTER_COMPENSATION_COEFFICIENTS : t_comp_coeff_array := (
+{%- for coeff_bin in coefficients %}
+        {{ "%-3d"|format(loop.index0) }} => "{{ coeff_bin }}"{{ "," if not loop.last }}
+{%- endfor %}
+    );
+
+end package;

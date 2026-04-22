@@ -12,6 +12,7 @@ import os
 sys.path.append("../")
 from scripts.model.polyphase_filter import Polyphase_interpolate, Polyphase_decimate
 from scripts.model.halfband_filter import Halfband_interpolate, Halfband_decimate
+from scripts.model.cic_filter import CIC_decimate, CIC_interpolate
 from scripts.synth_and_test.polyphase_filter import polyphase_intepolate_checker, polyphase_decimate_checker
 from scripts.synth_and_test.halfband_filter import halfband_intepolate_checker, halfband_decimate_checker
 
@@ -395,6 +396,59 @@ test.add_config(
     pre_config=halfband_checker_obj.pre_config_wrapper(
         a_input_samples=256*16, a_cfg=cfg),
     post_check=halfband_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
+)
+
+# -----------------------------------------------------------------------
+# CIC Decimate
+# -----------------------------------------------------------------------
+testbench = lib.entity("cic_decimate_tb")
+test = testbench.test("auto")
+
+# Configuration
+G_DATA_WIDTH = 16
+M = 2
+FS = 100e3 * M
+FPASS = 13.2e3
+G_COMPENSATION_FILTER_EN = True
+
+cfg = dict(
+    input_frequency=0.8 * FPASS,
+    fpass=FPASS,
+    atten_db=60,
+    fs=FS,
+    multirate_factor=M,
+    G_DATA_WIDTH=G_DATA_WIDTH,
+    G_DATA_WIDTH_FRAC=G_DATA_WIDTH - 2,
+    G_COEFF_WIDTH=G_DATA_WIDTH,
+)
+
+# Generate CIC object, FIR coefficients, and CIC order
+cic_decimate_obj = CIC_decimate(
+    a_fpass=cfg["fpass"],
+    a_atten_db=cfg["atten_db"],
+    a_fs=cfg["fs"],
+    a_multirate_factor=cfg["multirate_factor"],
+    a_data_width=cfg["G_COEFF_WIDTH"],
+)
+
+# Generate VHDL package for synthesis
+cic_decimate_obj.generate_vhdl_package(
+    a_jinja_path="../scripts/synth_and_test/jinja",
+    a_output_path="../src/cic/decimate/cic_decimate_pkg.vhd"
+)
+
+
+# TODO: implement pre_config and post_check
+test.add_config(
+    name=f'M={G_MULTIRATE_FACTOR}_ORDER={XXX}',
+    generics=dict(
+        G_DATA_WIDTH=G_DATA_WIDTH,
+        G_CIC_ORDER=G_CIC_ORDER,
+        G_MULTIRATE_FACTOR=G_MULTIRATE_FACTOR,
+        G_COMPENSATION_FILTER_EN=G_COMPENSATION_FILTER_EN,
+    ),
+    pre_config=None,
+    post_check=None,
 )
 
 # ============================================================
