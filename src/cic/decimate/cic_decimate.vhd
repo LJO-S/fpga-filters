@@ -1,20 +1,18 @@
 -------------------------------------------------------------------------------
--- Implements a Transposed Halfband Decimator
+-- Implements a CIC Decimator
 -- 
 -- Pros:
 --      > Allows for full stream processing of input samples
 -- Cons:
 --      > 
 -- 
--- 
--- Example: Decimate-by-8
--- TODO fix this stuff
---       ____      ______       ____      ______       ____      ______ 
---      |    |    |Alias |     |    |    |Alias |     |    |    |Alias |
---      | v2 |--->|Filter|---->| v2 |--->|Filter|---->| v2 |--->|Filter|---> y(m)
---      |____|    |______|     |____|    |______|     |____|    |______|
---      \________________/
---           1 substage
+-- Example:
+--      
+--  x(n)------>(+)---|z|---+-->-- ... -->|DECIMATE|-------+-------(-)---|z|---> ... --> y(m)
+--              |          V                              |        | 
+--              +----------+                              +--|z|---+  
+--             \________________/                       \________________/
+--             1 integrator stage                          1 comb stage
 -------------------------------------------------------------------------------
 
 library ieee;
@@ -31,8 +29,7 @@ entity cic_decimate is
         G_DATA_WIDTH       : natural := 16;
         G_CIC_ORDER        : natural := 4;
         G_MULTIRATE_FACTOR : natural := 32;
-        -- Note: CIC filters have a drooping passband. If unity-gain is critical add compensation FIR
-        G_COMPENSATION_FILTER_EN : boolean := TRUE
+        G_INIT_FILE        : string
     );
     port (
         clk : in std_logic;
@@ -115,7 +112,7 @@ begin
     end process p_comb;
     -- ================================================================
     -- 4. Normalize 
-    -- Note: The division D^Q is performed as a right-shift by Q bits, where Q = N * log2(R) and N is the number of stages and R is the decimation factor
+    -- Note: The division D^Q is performed as a right-shift by K bits, where K = Q * log2(D) and Q is the number of stages and D is the decimation factor
     p_normalize : process (clk)
     begin
         if rising_edge(clk) then
@@ -133,7 +130,8 @@ begin
             G_DATA_WIDTH       => G_DATA_WIDTH,
             G_COEFF_WIDTH      => C_COEFF_WIDTH,
             G_COEFF_FRAC_WIDTH => C_COEFF_FRAC_WIDTH,
-            G_NUM_TAPS         => C_NUM_TAPS
+            G_NUM_TAPS         => C_NUM_TAPS,
+            G_INIT_FILE        => G_INIT_FILE
         )
         port map
         (

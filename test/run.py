@@ -12,9 +12,10 @@ import os
 sys.path.append("../")
 from scripts.model.polyphase_filter import Polyphase_interpolate, Polyphase_decimate
 from scripts.model.halfband_filter import Halfband_interpolate, Halfband_decimate
-from scripts.model.cic_filter import CIC_decimate, CIC_interpolate
+from scripts.model.cic_filter import cic_decimate, cic_interpolate
 from scripts.synth_and_test.polyphase_filter import polyphase_intepolate_checker, polyphase_decimate_checker
 from scripts.synth_and_test.halfband_filter import halfband_intepolate_checker, halfband_decimate_checker
+from scripts.synth_and_test.cic_filter import cic_decimate_checker
 
 
 # ============================================================
@@ -406,10 +407,9 @@ test = testbench.test("auto")
 
 # Configuration
 G_DATA_WIDTH = 16
-M = 2
+M = 8
 FS = 100e3 * M
 FPASS = 13.2e3
-G_COMPENSATION_FILTER_EN = True
 
 cfg = dict(
     input_frequency=0.8 * FPASS,
@@ -423,11 +423,11 @@ cfg = dict(
 )
 
 # Generate CIC object, FIR coefficients, and CIC order
-cic_decimate_obj = CIC_decimate(
+cic_decimate_obj = cic_decimate(
+    a_decimate_factor=cfg["multirate_factor"],
     a_fpass=cfg["fpass"],
-    a_atten_db=cfg["atten_db"],
     a_fs=cfg["fs"],
-    a_multirate_factor=cfg["multirate_factor"],
+    a_atten_db=cfg["atten_db"],
     a_data_width=cfg["G_COEFF_WIDTH"],
 )
 
@@ -437,18 +437,20 @@ cic_decimate_obj.generate_vhdl_package(
     a_output_path="../src/cic/decimate/cic_decimate_pkg.vhd"
 )
 
+cic_decimate_checker_obj = cic_decimate_checker(a_cic_object=cic_decimate_obj)
 
-# TODO: implement pre_config and post_check
 test.add_config(
-    name=f'M={G_MULTIRATE_FACTOR}_ORDER={XXX}',
+    name=f'M={cfg["multirate_factor"]}',
     generics=dict(
         G_DATA_WIDTH=G_DATA_WIDTH,
-        G_CIC_ORDER=G_CIC_ORDER,
-        G_MULTIRATE_FACTOR=G_MULTIRATE_FACTOR,
-        G_COMPENSATION_FILTER_EN=G_COMPENSATION_FILTER_EN,
+        G_CIC_ORDER=cic_decimate_obj.order,
+        G_MULTIRATE_FACTOR=cfg["multirate_factor"],
+        G_INIT_FILE=f'CIC_{cfg["G_COEFF_WIDTH"]}.txt',
     ),
-    pre_config=None,
-    post_check=None,
+    pre_config=cic_decimate_checker_obj.pre_config_wrapper(
+        a_input_samples=1024 * cfg["multirate_factor"], a_cfg=cfg
+    ),
+    post_check=cic_decimate_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )
 
 # ============================================================

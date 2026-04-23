@@ -110,7 +110,11 @@ class cic_decimate:
         self.comb_stages = [comb(a_order=self.N, a_register_width=self.register_width) for _ in range(self.order)]
 
         # Generate coefficients for an inverse sinc filter (compensation filter)
-        num_taps = 10 * self.order + 1
+        # num_taps must be even for the folded FIR structure (no unpaired center tap)
+        num_taps = 5 * self.order
+        if num_taps % 2 != 0:
+            num_taps += 1
+            
         coeffs = inverse_sinc_compensation_filter(
             a_num_taps=num_taps,
             a_multirate_factor=1 / self.R,
@@ -148,35 +152,34 @@ class cic_decimate:
         else:
             return None
 
-    def generate_vhdl_package(self, a_jinja_path: str, a_output_path: str):
-        from jinja2 import Environment, FileSystemLoader
+    def _coeff_width_params(self):
+        coefficients = self.compensation_filter.coefficients
+        max_abs_coeff = float(np.max(np.abs(coefficients)))
+        n_int_bits = 0 if max_abs_coeff < 1.0 else int(np.floor(np.log2(max_abs_coeff))) + 1
+        coeff_frac_width = self.data_width - 1
+        return 1 + n_int_bits + coeff_frac_width, coeff_frac_width
+
+    def dump_to_txt(self, a_output_dir: str):
         from pathlib import Path
 
         coefficients = self.compensation_filter.coefficients
         num_taps = len(coefficients)
-
-        # Determine the minimum number of integer bits (above the sign bit) needed
-        # to represent the largest coefficient without overflow.
-        max_abs_coeff = float(np.max(np.abs(coefficients)))
-        if max_abs_coeff < 1.0:
-            n_int_bits = 0
-        else:
-            # floor(log2(x)) + 1 gives the number of magnitude bits needed for x in [2^k, 2^(k+1))
-            n_int_bits = int(np.floor(np.log2(max_abs_coeff))) + 1
-
-        # Format: 1 sign bit + n_int_bits integer bits + (data_width - 1) fractional bits
-        coeff_frac_width = self.data_width - 1
-        coeff_width = 1 + n_int_bits + coeff_frac_width
-
-        # Quantize the first half of the symmetric FIR to two's-complement binary strings
-        # The folded FIR structure uses only G_NUM_TAPS/2 entries
+        coeff_width, coeff_frac_width = self._coeff_width_params()
         scale = 2 ** coeff_frac_width
-        mask  = (1 << coeff_width) - 1
-        half_coeffs = coefficients[:num_taps // 2]
-        coeff_bin_strings = [
-            format(mask & int(round(float(c) * scale)), f"0{coeff_width}b")
-            for c in half_coeffs
-        ]
+        mask = (1 << coeff_width) - 1
+
+        output_path = Path(a_output_dir) / f"CIC_{self.data_width}.txt"
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            for c in coefficients[:num_taps // 2]:
+                f.write(format(mask & int(round(float(c) * scale)), f"0{coeff_width}b") + "\n")
+
+    def generate_vhdl_package(self, a_jinja_path: str, a_output_path: str):
+        from jinja2 import Environment, FileSystemLoader
+        from pathlib import Path
+
+        coeff_width, coeff_frac_width = self._coeff_width_params()
+        num_taps = len(self.compensation_filter.coefficients)
 
         env = Environment(loader=FileSystemLoader(a_jinja_path))
         template = env.get_template("cic_decimate_pkg.vhd.j2")
@@ -185,7 +188,6 @@ class cic_decimate:
             cic_order=self.order,
             coeff_width=coeff_width,
             coeff_frac_width=coeff_frac_width,
-            coefficients=coeff_bin_strings,
         )
 
         output_path = Path(a_output_path)
@@ -265,7 +267,10 @@ class cic_interpolate:
         self.comb_stages = [comb(a_order=self.N, a_register_width=self.register_width) for _ in range(self.order)]
 
         # Generate coefficients for an inverse sinc filter (compensation filter)
-        num_taps = 10 * self.order + 1
+        # num_taps must be even for the folded FIR structure (no unpaired center tap)
+        num_taps = 5 * self.order + 1
+        if num_taps % 2 != 0:
+            num_taps += 1
         coeffs = inverse_sinc_compensation_filter(
             a_num_taps=num_taps,
             a_multirate_factor=self.R,
@@ -361,6 +366,9 @@ def inverse_sinc_compensation_filter(
 
     # Normalise to unity gain at DC (index 1 is the first non-zero frequency point near DC)
     desired_response /= desired_response[1]
+
+    # Type II FIR (even numtaps) requires zero gain at Nyquist; stopband gain there is irrelevant
+    desired_response[-1] = 0.0
 
     # Design an FIR with the arbitrary passband/stopband shape using frequency sampling
     coeffs = firwin2(numtaps=a_num_taps, freq=f, gain=desired_response)
@@ -484,8 +492,3 @@ if __name__ == "__main__":
         # Print arrow pointing to the max frequency component
         ax4.annotate(f"Output Frequency: {max_freq:.1f} Hz", xy=(max_freq, magnitudeDB[max_freq_index]), xytext=(max_freq, magnitudeDB[max_freq_index] + 10), arrowprops=dict(facecolor='black', shrink=0.05), fontsize=8)
         plt.show()
-
-
-# Aliases matching the import names used in test/run.py
-CIC_decimate   = cic_decimate
-CIC_interpolate = cic_interpolate

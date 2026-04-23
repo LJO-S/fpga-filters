@@ -3,7 +3,7 @@ from pathlib import Path
 from bitstring import BitArray
 
 from scripts.synth_and_test.utils import format_as_bstring, compare_value, save_postcheck_plot_cic
-from ..model.cic_filter import CIC_decimate, CIC_interpolate
+from ..model.cic_filter import cic_decimate, cic_interpolate
 
 # class halfband_intepolate_checker:
 #     def __init__(self, a_halfband_object: Halfband_interpolate):
@@ -121,8 +121,8 @@ from ..model.cic_filter import CIC_decimate, CIC_interpolate
     
 
 class cic_decimate_checker:
-    def __init__(self, a_cic_object: CIC_decimate):
-        self.cic_object: CIC_decimate = a_cic_object
+    def __init__(self, a_cic_object: cic_decimate):
+        self.cic_object: cic_decimate = a_cic_object
 
     def pre_config_wrapper(self, a_input_samples: int, a_cfg: dict):
         def pre_config(output_path) -> bool:
@@ -207,20 +207,16 @@ class cic_decimate_checker:
                     print("=====================================================")
                     checker = checker and comparison
 
-
-
-            # Fetch FIR compensatio coefficients
-            fir_coeffs = self.cic_object.fir_compensation_filter.taps
-
             # Plot
             save_postcheck_plot_cic(
-                a_input_data=plt_input, 
-                a_output_data=plt_output, 
+                a_input_data=plt_input,
+                a_output_data=plt_output,
                 a_reference_data=plt_reference,
-                a_sampling_freq=a_cfg["fs"], 
-                a_multirate_factor=1 / a_cfg["multirate_factor"], 
+                a_cic_object=self.cic_object,
+                a_sampling_freq=a_cfg["fs"],
+                a_multirate_factor=1 / a_cfg["multirate_factor"],
+                a_fpass=a_cfg["fpass"],
                 a_atten_db=a_cfg["atten_db"],
-                a_taps_fir=fir_coeffs,
                 a_save_plot=a_save_plot,
                 a_output_path=output_path
                 )

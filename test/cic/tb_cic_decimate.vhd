@@ -16,23 +16,28 @@ entity cic_decimate_tb is
         G_DATA_WIDTH             : natural;
         G_CIC_ORDER              : natural;
         G_MULTIRATE_FACTOR       : natural;
-        G_COMPENSATION_FILTER_EN : boolean
+        G_INIT_FILE              : string
     );
 end;
 
 architecture bench of cic_decimate_tb is
-    constant clk_period             : time      := 5 ns;
-    signal clk                      : std_logic := '0';
-    signal i_data                   : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
-    signal i_valid                  : std_logic;
-    signal o_data                   : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
-    signal o_valid                  : std_logic;
-    signal tb_input_data_float      : real                                        := 0.0;
-    signal tb_output_data_float     : real                                        := 0.0;
-    signal tb_auto_set              : boolean                                     := false;
-    signal tb_auto_done             : boolean                                     := false;
-    signal auto_data_input          : std_logic_vector(G_DATA_WIDTH - 1 downto 0) := (others => '0');
-    signal auto_data_valid          : std_logic                                   := '0';
+    constant clk_period : time := 5 ns;
+    -- Generics
+    constant TB_INIT_FILE : string := output_path(runner_cfg) & "/" & G_INIT_FILE;
+    -- Ports
+    signal clk     : std_logic := '0';
+    signal i_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
+    signal i_valid : std_logic;
+    signal o_data  : std_logic_vector(G_DATA_WIDTH - 1 downto 0);
+    signal o_valid : std_logic;
+    -- Testbench
+    signal tb_input_data_float  : real                                        := 0.0;
+    signal tb_output_data_float : real                                        := 0.0;
+    signal tb_auto_set          : boolean                                     := false;
+    signal tb_auto_done         : boolean                                     := false;
+    signal auto_data_input      : std_logic_vector(G_DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal auto_data_valid      : std_logic                                   := '0';
+    -- Procedure
     procedure wait_clock (clk_ticks : integer) is
     begin
         for i in 0 to clk_ticks - 1 loop
@@ -78,12 +83,12 @@ begin
         end if;
     end process p_write_output_file;
     -- ================================================================
-    cic_decimate_sequential_inst : entity work.cic_decimate_sequential
+    cic_decimate_inst : entity work.cic_decimate
         generic map(
             G_DATA_WIDTH             => G_DATA_WIDTH,
             G_CIC_ORDER              => G_CIC_ORDER,
             G_MULTIRATE_FACTOR       => G_MULTIRATE_FACTOR,
-            G_COMPENSATION_FILTER_EN => G_COMPENSATION_FILTER_EN
+            G_INIT_FILE              => TB_INIT_FILE
         )
         port map
         (
