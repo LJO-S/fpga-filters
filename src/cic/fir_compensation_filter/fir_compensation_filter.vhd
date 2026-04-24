@@ -38,8 +38,8 @@ architecture rtl of fir_compensation_filter is
     --------------------
     -- Types
     --------------------
-    type t_array_slv is array (natural range<>) of std_logic_vector;
-    type t_array_of_array_slv is array (natural range<>) of t_array_slv;
+    type t_array_slv is array (natural range <>) of std_logic_vector;
+    type t_array_of_array_slv is array (natural range <>) of t_array_slv;
     --------------------
     -- Functions
     --------------------
@@ -64,6 +64,8 @@ architecture rtl of fir_compensation_filter is
     -- Signals
     --------------------
     signal coefficient_memory   : t_array_slv(0 to (G_NUM_TAPS/2) - 1)(G_COEFF_WIDTH - 1 downto 0)                           := init_ram_from_file;
+    signal r_data               : std_logic_vector(G_DATA_WIDTH - 1 downto 0)                                                := (others => '0');
+    signal r_valid              : std_logic                                                                                  := '0';
     signal r_delay_line         : t_array_slv(0 to G_NUM_TAPS - 1)(G_DATA_WIDTH + G_COEFF_WIDTH + C_BIT_GROWTH - 1 downto 0) := (others => (others => '0'));
     signal r_dlyline_valid      : std_logic                                                                                  := '0';
     signal r_dlyline_shifted    : signed(G_DATA_WIDTH + (G_COEFF_WIDTH - G_COEFF_FRAC_WIDTH) + C_BIT_GROWTH - 1 downto 0)    := (others => '0');
@@ -76,18 +78,26 @@ begin
     o_data  <= r_acc_clip;
     o_valid <= r_valid_post_proc_d1;
     -- ================================================================
+    p_pipeline : process (clk)
+    begin
+        if rising_edge(clk) then
+            r_data  <= i_data;
+            r_valid <= i_valid;
+        end if;
+    end process p_pipeline;
+    -- ================================================================
     p_mac_and_delay_line_upper : process (clk)
         variable v_result : signed(G_DATA_WIDTH + G_COEFF_WIDTH - 1 downto 0) := (others => '0');
     begin
         if rising_edge(clk) then
             -- Note: this implements a Transposed Folded filter
-            if (i_valid = '1') then
+            if (r_valid = '1') then
                 ------------------
                 -- MAC & Delay Line
                 ------------------
                 for tap in 0 to (G_NUM_TAPS/2) - 1 loop
                     -- Multiply
-                    v_result := signed(coefficient_memory(tap)) * signed(i_data);
+                    v_result := signed(coefficient_memory(tap)) * signed(r_data);
                     -- Accumulate delay line
                     if (tap = 0) then
                         r_delay_line(tap)               <= std_logic_vector(resize(v_result, r_delay_line(0)'length));
@@ -98,7 +108,7 @@ begin
                     end if;
                 end loop;
             end if;
-            r_dlyline_valid <= i_valid;
+            r_dlyline_valid <= r_valid;
         end if;
     end process p_mac_and_delay_line_upper;
     -- ================================================================
