@@ -314,6 +314,49 @@ class cic_interpolate:
 
             output.append(res_interpolated)
         return output   
+    
+    def _coeff_width_params(self):
+        coefficients = self.compensation_filter.coefficients
+        max_abs_coeff = float(np.max(np.abs(coefficients)))
+        n_int_bits = 0 if max_abs_coeff < 1.0 else int(np.floor(np.log2(max_abs_coeff))) + 1
+        coeff_frac_width = self.data_width - 1
+        return 1 + n_int_bits + coeff_frac_width, coeff_frac_width
+
+    def dump_to_txt(self, a_output_dir: str):
+        from pathlib import Path
+
+        coefficients = self.compensation_filter.coefficients
+        num_taps = len(coefficients)
+        coeff_width, coeff_frac_width = self._coeff_width_params()
+        scale = 2 ** coeff_frac_width
+        mask = (1 << coeff_width) - 1
+
+        output_path = Path(a_output_dir) / f"CIC_{self.data_width}.txt"
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            for c in coefficients[:num_taps // 2]:
+                f.write(format(mask & int(round(float(c) * scale)), f"0{coeff_width}b") + "\n")
+
+    def generate_vhdl_package(self, a_jinja_path: str, a_output_path: str):
+        from jinja2 import Environment, FileSystemLoader
+        from pathlib import Path
+
+        coeff_width, coeff_frac_width = self._coeff_width_params()
+        num_taps = len(self.compensation_filter.coefficients)
+
+        env = Environment(loader=FileSystemLoader(a_jinja_path))
+        template = env.get_template("cic_interpolate_pkg.vhd.j2")
+        rendered_code = template.render(
+            num_taps=num_taps,
+            cic_order=self.order,
+            coeff_width=coeff_width,
+            coeff_frac_width=coeff_frac_width,
+        )
+
+        output_path = Path(a_output_path)
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            f.write(rendered_code)
 
 class compensation_fir:
     def __init__(self, a_coefficients):

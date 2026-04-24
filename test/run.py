@@ -15,7 +15,7 @@ from scripts.model.halfband_filter import Halfband_interpolate, Halfband_decimat
 from scripts.model.cic_filter import cic_decimate, cic_interpolate
 from scripts.synth_and_test.polyphase_filter import polyphase_intepolate_checker, polyphase_decimate_checker
 from scripts.synth_and_test.halfband_filter import halfband_intepolate_checker, halfband_decimate_checker
-from scripts.synth_and_test.cic_filter import cic_decimate_checker
+from scripts.synth_and_test.cic_filter import cic_decimate_checker, cic_interpolate_checker
 
 
 # ============================================================
@@ -409,7 +409,7 @@ test = testbench.test("auto")
 G_DATA_WIDTH = 16
 M = 8
 FS = 100e3 * M
-FPASS = 13.2e3
+FPASS = (FS/M) / 4
 
 cfg = dict(
     input_frequency=0.8 * FPASS,
@@ -451,6 +451,62 @@ test.add_config(
         a_input_samples=1024 * cfg["multirate_factor"], a_cfg=cfg
     ),
     post_check=cic_decimate_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
+)
+
+# -----------------------------------------------------------------------
+# CIC Interpolate
+# Sequential
+# -----------------------------------------------------------------------
+testbench = lib.entity("cic_interpolate_sequential_tb")
+test = testbench.test("auto")
+
+# Configuration
+G_DATA_WIDTH = 16
+G_CIC_ORDER = 4
+L = 4
+FS = 100e3 / L
+FPASS = FS / 4
+
+cfg = dict(
+    input_frequency=0.8 * FPASS,
+    fpass=FPASS,
+    atten_db=60,
+    fs=FS,
+    multirate_factor=L,
+    G_DATA_WIDTH=G_DATA_WIDTH,
+    G_DATA_WIDTH_FRAC=G_DATA_WIDTH - 2,
+    G_COEFF_WIDTH=G_DATA_WIDTH,
+)
+
+# Generate CIC object, FIR coefficients, and CIC order
+cic_interpolate_obj = cic_interpolate(
+    a_interpolate_factor=cfg["multirate_factor"],
+    a_fpass=cfg["fpass"],
+    a_fs=cfg["fs"],
+    a_atten_db=cfg["atten_db"],
+    a_data_width=cfg["G_COEFF_WIDTH"],
+)
+
+# Generate VHDL package for synthesis
+cic_interpolate_obj.generate_vhdl_package(
+    a_jinja_path="../scripts/synth_and_test/jinja",
+    a_output_path="../src/cic/interpolate/cic_interpolate_pkg.vhd"
+)
+
+cic_interpolate_checker_obj = cic_interpolate_checker(a_cic_object=cic_interpolate_obj)
+
+test.add_config(
+    name=f'L={cfg["multirate_factor"]}',
+    generics=dict(
+        G_DATA_WIDTH=cfg["G_DATA_WIDTH"],
+        G_CIC_ORDER=cic_interpolate_obj.order,
+        G_MULTIRATE_FACTOR=cfg["multirate_factor"],
+        G_INIT_FILE=f'CIC_{cfg["G_COEFF_WIDTH"]}.txt',
+    ),
+    pre_config=cic_interpolate_checker_obj.pre_config_wrapper(
+        a_input_samples=1024, a_cfg=cfg
+    ),
+    post_check=cic_interpolate_checker_obj.post_check_wrapper(a_cfg=cfg, a_save_plot=True),
 )
 
 # ============================================================

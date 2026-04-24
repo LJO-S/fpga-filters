@@ -251,7 +251,12 @@ def save_postcheck_plot_cic(a_input_data: list,
     n = np.linspace(-0.5, 0.5, 1000)
     n[n == 0] = 1e-12
     alias_freq_normalized = 1.0 / a_cic_object.R
-    fpass_normalized = a_fpass / a_sampling_freq
+    if a_multirate_factor > 1.0:
+        # Interpolate
+        fpass_normalized = a_fpass / (a_sampling_freq * a_multirate_factor)
+    else:
+        # Decimate or no rate change
+        fpass_normalized = a_fpass / a_sampling_freq
     cic_response = np.abs(np.sin(n * np.pi * a_cic_object.D) / np.sin(n * np.pi)) ** a_cic_object.order
     cic_response_compare = cic_response / np.max(cic_response)
     alias_band = (n > (alias_freq_normalized - fpass_normalized)) & (n < alias_freq_normalized)
