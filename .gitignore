@@ -2,3 +2,7 @@
 .venv
 test/vunit_out
 test/vivado
+src/halfband/decimate/halfband_decimate_pkg.vhd
+src/halfband/interpolate/halfband_interpolate_pkg.vhd
+src/cic/decimate/cic_decimate_pkg.vhd
+src/cic/interpolate/cic_interpolate_pkg.vhd
